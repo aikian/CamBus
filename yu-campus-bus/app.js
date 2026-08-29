@@ -127,10 +127,30 @@ const state = {
 
 const map = L.map('map', { zoomControl: false, attributionControl: true, minZoom: 14, maxZoom: 20 })
   .setView(CAMPUS_CENTER, 16);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Tile provider fallback: try OSM first, then CartoDB if tiles are blocked.
+const TILE_PROVIDERS = [
+  { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors' },
+  { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors & CartoDB' }
+];
+
+let currentTileIndex = 0;
+let tileLayer = L.tileLayer(TILE_PROVIDERS[currentTileIndex].url, {
   maxZoom: 20,
-  attribution: '&copy; OpenStreetMap contributors'
+  attribution: TILE_PROVIDERS[currentTileIndex].attribution
 }).addTo(map);
+
+tileLayer.on('tileerror', function (err) {
+  // If tiles fail (e.g., OSM blocking), switch to the next provider once.
+  if (currentTileIndex + 1 < TILE_PROVIDERS.length) {
+    currentTileIndex += 1;
+    map.removeLayer(tileLayer);
+    tileLayer = L.tileLayer(TILE_PROVIDERS[currentTileIndex].url, {
+      maxZoom: 20,
+      attribution: TILE_PROVIDERS[currentTileIndex].attribution
+    }).addTo(map);
+    toast('지도 타일 공급자를 대체합니다 (대체 제공자 사용 중)');
+  }
+});
 
 function toast(msg) {
   const el = document.getElementById('toast');
