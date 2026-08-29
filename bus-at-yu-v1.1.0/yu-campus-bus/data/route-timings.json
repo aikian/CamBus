@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-29T15:31:18.796Z",
+  "description": "정류장 간 현장 측정 초 값입니다. null이면 저장된 도로 경로 시간을 사용합니다.",
+  "routes": {
+    "r1": {
+      "source": "osrm-until-field-measured",
+      "legs": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "r2": {
+      "source": "osrm-until-field-measured",
+      "legs": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  }
+}

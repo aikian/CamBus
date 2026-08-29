@@ -1,0 +1,18 @@
+{
+  "name": "BUS@YU",
+  "short_name": "BUS@YU",
+  "description": "영남대학교 교내 순환버스 및 도보 길찾기",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#17191c",
+  "lang": "ko-KR",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
