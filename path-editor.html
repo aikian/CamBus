@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#17191c" />
+  <title>CamBus 노선·시간 편집기</title>
+  <link rel="preconnect" href="https://tile.openstreetmap.org" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="stop-editor.css" />
+  <link rel="stylesheet" href="path-editor.css" />
+</head>
+<body>
+  <div class="editor-shell">
+    <aside class="editor-panel">
+      <header class="editor-header">
+        <div>
+          <span class="eyebrow">CamBus tools</span>
+          <h1>노선·시간 편집기</h1>
+          <p>구간을 고른 뒤 지도에 경유점을 찍어 손그림과 같은 도로로 유도하세요.</p>
+        </div>
+        <div class="header-links">
+          <a class="close-link" href="./stop-editor.html">정류장</a>
+          <a class="close-link" href="./#bus" target="_blank" rel="noopener">본 화면 ↗</a>
+        </div>
+      </header>
+
+      <div class="route-tabs" role="tablist" aria-label="노선 선택">
+        <button class="route-tab active r1" type="button" data-route="r1" role="tab" aria-selected="true">1노선 · 인문계</button>
+        <button class="route-tab r2" type="button" data-route="r2" role="tab" aria-selected="false">2노선 · 자연계</button>
+      </div>
+
+      <section class="selected-card path-selected" aria-live="polite">
+        <div class="selected-order" id="selectedOrder">1</div>
+        <div class="selected-copy">
+          <span id="selectedCode">구간 1</span>
+          <strong id="selectedName">노선 데이터를 불러오는 중</strong>
+          <small id="selectedMeta">—</small>
+        </div>
+      </section>
+
+      <div class="editor-actions primary-actions">
+        <button class="soft-button" id="guideButton" type="button">손그림 노선도</button>
+        <button class="soft-button" id="fitButton" type="button">노선 전체 보기</button>
+        <button class="soft-button" id="undoButton" type="button" disabled>되돌리기</button>
+      </div>
+
+      <section class="path-controls">
+        <div class="path-control-row">
+          <button class="soft-button" id="removeAnchorButton" type="button">마지막 점 삭제</button>
+          <button class="soft-button danger" id="clearAnchorsButton" type="button">이 구간 초기화</button>
+        </div>
+        <div class="timing-control">
+          <label for="timingInput"><b>실측 구간시간</b><span>비워두면 저장된 도로 예상시간 사용</span></label>
+          <div><input id="timingInput" type="number" min="10" max="1800" step="1" placeholder="초" /><button id="measureButton" type="button">측정 시작</button></div>
+        </div>
+      </section>
+
+      <div class="connection-status" id="connectionStatus">
+        <span class="status-dot"></span><span>노선 데이터를 불러오는 중…</span>
+      </div>
+
+      <div class="stop-list leg-list" id="legList" aria-label="노선 구간 목록"></div>
+
+      <footer class="save-bar">
+        <div><strong id="saveState">저장된 노선</strong><span id="updatedAt">—</span></div>
+        <button class="save-button" id="saveButton" type="button" disabled>노선·시간 저장</button>
+      </footer>
+    </aside>
+
+    <main class="map-stage">
+      <div id="pathMap" aria-label="노선 경유점 편집 지도"></div>
+      <div class="map-hint"><strong>지도 클릭 = 선택 구간에 경유점 추가</strong><span>경유점 핀을 끌어 이동할 수 있습니다. 저장된 노선은 CamBus가 외부 라우터 없이 바로 사용합니다.</span></div>
+      <div class="route-legend"><span><i class="legend-line road"></i>고정 노선</span><span><i class="legend-line selected-leg"></i>선택 구간</span><span><i class="anchor-dot"></i>경유점</span></div>
+    </main>
+  </div>
+
+  <dialog id="guideDialog">
+    <div class="dialog-head"><div><span class="eyebrow">사용자 제공 원본</span><h2 id="guideTitle">손그림 노선도</h2></div><button class="dialog-close" id="closeGuideButton" type="button" aria-label="닫기">×</button></div>
+    <div class="guide-canvas"><img id="guideImage" alt="손그림 노선도" /></div>
+    <p>선택한 구간이 손그림의 화살표와 같은 도로를 지나도록 경유점을 추가하세요.</p>
+  </dialog>
+
+  <div class="toast" id="pathToast" role="status" aria-live="polite"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="path-editor.js"></script>
+</body>
+</html>

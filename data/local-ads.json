@@ -1,0 +1,15 @@
+[
+  {
+    "id": "house-local-recruit",
+    "kind": "house",
+    "title": "영남대 · 경산 지역 광고 모집중",
+    "subtitle": "맛집 · 카페 · 행사 · 동아리 · 지역 서비스",
+    "cta": "ad@uxo.kr",
+    "url": "mailto:ad@uxo.kr?subject=CamBus%20%EC%A7%80%EC%97%AD%20%EA%B4%91%EA%B3%A0%20%EB%AC%B8%EC%9D%98",
+    "image": null,
+    "startsAt": null,
+    "endsAt": null,
+    "weight": 1,
+    "enabled": true
+  }
+]

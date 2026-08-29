@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#17191c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <title>CamBus · 영남대 순환버스</title>
+  <link rel="preconnect" href="https://tile.openstreetmap.org" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- EZOIC HEAD START: 승인 후 대시보드가 발급한 CMP/header 스크립트 원문만 여기에 설치합니다. ADS_PLAN.md 참고. -->
+  <!-- EZOIC HEAD END -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <nav class="page-switch" role="tablist" aria-label="페이지 전환">
+      <button class="page-switch-btn active" type="button" role="tab" data-page-index="0" aria-controls="mainPage" aria-selected="true">CamBus</button>
+      <button class="page-switch-btn" type="button" role="tab" data-page-index="1" aria-controls="linksPage" aria-selected="false" tabindex="-1">Picks</button>
+    </nav>
+
+    <div class="page-viewport" id="pageViewport">
+      <div class="page-track" id="pageTrack">
+        <section class="app-page main-page" id="mainPage" aria-label="CamBus 메인">
+          <aside class="side-panel" id="sidePanel">
+            <header class="brand-row">
+              <div>
+                <div class="brand">CamBus</div>
+                <div class="brand-sub">영남대학교 순환버스 · 교내 이동</div>
+              </div>
+              <button class="icon-btn mobile-only" id="collapsePanel" aria-label="패널 접기">⌄</button>
+            </header>
+            <span class="mobile-panel-hint mobile-only" aria-hidden="true">길찾기 열기</span>
+
+            <section class="search-card">
+              <div class="field-row">
+                <span class="dot dot-blue"></span>
+                <div class="field-body">
+                  <label for="startInput">출발</label>
+                  <input id="startInput" list="destinationList" value="현재 위치" placeholder="현재 위치 또는 건물·정류장 검색" autocomplete="off" />
+                </div>
+                <div class="field-actions">
+                  <button class="small-btn" id="locateBtn" type="button">현위치</button>
+                  <button class="small-btn" id="pickStartMapBtn" type="button" aria-pressed="false">지도</button>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div class="field-row">
+                <span class="dot dot-red"></span>
+                <div class="field-body">
+                  <label for="destinationInput">도착</label>
+                  <input id="destinationInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" />
+                  <datalist id="destinationList"></datalist>
+                </div>
+                <button class="small-btn" id="pickMapBtn" type="button" aria-pressed="false">지도</button>
+              </div>
+              <div class="divider"></div>
+              <div class="field-row depart-row">
+                <span class="dot dot-time" aria-hidden="true">🕒</span>
+                <div class="field-body">
+                  <label for="departureTimeInput">출발 시간</label>
+                  <div class="depart-controls">
+                    <select id="departureModeSelect" aria-label="출발 시간 방식">
+                      <option value="now">지금 출발</option>
+                      <option value="scheduled">시간 지정</option>
+                    </select>
+                    <input type="time" id="departureTimeInput" step="600" min="08:00" max="17:40" disabled aria-label="지정 출발 시간" />
+                  </div>
+                </div>
+              </div>
+              <button class="primary-btn" id="routeBtn">가장 빠른 길 찾기</button>
+            </section>
+
+            <section class="status-strip" id="serviceStatus">
+              <div>
+                <span class="status-dot" id="statusDot"></span>
+                <strong id="statusTitle">노선 불러오는 중</strong>
+              </div>
+              <span id="statusDetail">정차 위치와 OpenStreetMap 도로 경로를 확인 중…</span>
+            </section>
+
+            <section class="chips" aria-label="지도 레이어">
+              <button class="chip active route1" data-layer="route1">1노선 인문계</button>
+              <button class="chip active route2" data-layer="route2">2노선 자연계</button>
+              <button class="chip active bus" data-layer="buses">예상 버스</button>
+            </section>
+
+            <section class="results" id="results">
+              <div class="empty-state">
+                <div class="empty-icon">↗</div>
+                <strong>목적지를 선택하세요</strong>
+                <p>현재 위치에서 도보와 도보+순환버스를 비교합니다.</p>
+              </div>
+            </section>
+
+            <section class="notice-card">
+              <div class="notice-title">예상 위치 산정 방식</div>
+              <p>실제 버스 GPS가 없을 때는 배차 시각, OSM 도로망 구간시간, 서문 5분 정차를 이용해 추정합니다.</p>
+              <p style="margin-top:6px;">탑승자가 명시적으로 위치 공유에 동의한 운행편은 익명 집계 위치를 우선 사용할 수 있습니다.</p>
+            </section>
+          </aside>
+
+          <main id="map" aria-label="영남대학교 캠퍼스 지도"></main>
+
+          <button class="main-page-edge" id="mainPageEdge" type="button" aria-label="Picks 페이지로 넘기기"><span>›</span></button>
+
+          <div class="top-floating desktop-only">
+            <button class="map-pill" id="fitCampusBtn">캠퍼스 전체</button>
+            <button class="map-pill" id="guideBtn">노선 안내</button>
+            <button class="map-pill" id="timetableBtn">배차표</button>
+          </div>
+
+          <div class="map-controls">
+            <button class="round-btn" id="zoomInBtn" aria-label="확대">＋</button>
+            <button class="round-btn" id="zoomOutBtn" aria-label="축소">−</button>
+            <button class="round-btn locate" id="mapLocateBtn" aria-label="현재 위치">◎</button>
+          </div>
+
+          <div class="sim-badge" id="simBadge" hidden></div>
+
+          <div class="legend">
+            <span><i class="line line-r1"></i>1노선</span>
+            <span><i class="line line-r2"></i>2노선</span>
+            <span><i class="bus-mini"></i>예상 버스</span>
+          </div>
+
+          <button class="mobile-route-fab mobile-only" id="mobilePanelBtn">길찾기</button>
+
+          <section class="guidance-bar" id="guidanceBar" hidden aria-live="polite">
+            <div class="guidance-main">
+              <div class="guidance-icon" id="guidanceIcon">BUS</div>
+              <div class="guidance-copy">
+                <strong id="guidanceTitle">승하차 알림</strong>
+                <span id="guidanceDetail">경로를 선택하면 안내를 시작합니다.</span>
+              </div>
+            </div>
+            <div class="guidance-actions">
+              <button class="guidance-action" id="shareRideBtn" hidden>위치공유 OFF</button>
+              <button class="guidance-action" id="crowdingBtn" hidden>혼잡도</button>
+              <button class="guidance-action primary" id="guidanceStageBtn" hidden>탑승했어요</button>
+              <button class="guidance-action" id="stopGuidanceBtn">종료</button>
+            </div>
+          </section>
+
+          <div class="bottom-ad" id="bottomAd" aria-label="광고">
+            <span class="ad-label">광고</span>
+            <div class="bottom-ad-slot">메인 하단 배너 · 개발 모드</div>
+          </div>
+        </section>
+
+        <section class="app-page links-page" id="linksPage" aria-label="Picks 생활정보 피드">
+          <div class="links-scroll" id="linksScroll">
+            <header class="links-header">
+              <div>
+                <span class="links-kicker">CamBus · Picks</span>
+                <h1>영대 생활 피드</h1>
+                <p>영대소식, 학사 일정, 주변 맛집, 유용한 정보를 배너로 모았습니다.</p>
+              </div>
+              <button class="links-refresh" id="refreshLinksBtn" type="button">새로고침</button>
+            </header>
+
+            <section class="feed-list" id="feedList" aria-live="polite"></section>
+            <div class="links-empty" id="linksEmpty" hidden>
+              <strong>등록된 피드가 없습니다.</strong>
+              <span>data/portal-feed.json에 항목을 추가하면 여기에 표시됩니다.</span>
+            </div>
+
+            <footer class="links-footer">
+              <section class="visitor-stats" aria-label="사용자 통계">
+                <div class="visitor-stat">
+                  <span>오늘</span>
+                  <strong id="todayUsers">—</strong>
+                  <small>사용자</small>
+                </div>
+                <div class="visitor-stat">
+                  <span>이번달</span>
+                  <strong id="monthUsers">—</strong>
+                  <small>사용자</small>
+                </div>
+              </section>
+              <p class="visitor-note" id="visitorNote">익명 브라우저 기준 고유 사용자 수</p>
+
+              <section class="links-ad" id="linksAd" aria-label="광고">
+                <span class="ad-label">광고</span>
+                <div class="links-ad-slot" id="linksAdSlot">
+                  <a class="ad-recruit-link" href="mailto:ad@uxo.kr">
+                    <strong>영남대 · 경산 지역 광고 모집중</strong>
+                    <span>가게 · 행사 · 동아리 · 지역 서비스 배너 문의</span>
+                    <b>ad@uxo.kr</b>
+                  </a>
+                </div>
+              </section>
+            </footer>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="launch-ad" id="launchAd" hidden aria-label="광고">
+      <div class="launch-ad-head"><span>광고</span><button id="closeLaunchAd" class="ad-close" aria-label="광고 닫기">×</button></div>
+      <div id="launchAdSlot" class="launch-ad-slot">
+        <strong>대형 광고 영역</strong>
+        <span>첫 접속 세션 1회 · 개발 모드</span>
+      </div>
+    </section>
+
+    <dialog id="timetableDialog">
+      <div class="dialog-head">
+        <div><h2>교내 순환버스 배차표</h2><p>2026학년도 2학기 조정안 · 2026-09-01 시행</p></div>
+        <button class="icon-btn" id="closeTimetable" type="button" aria-label="배차표 닫기">×</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>구분</th><th>운행시간</th><th>배차</th></tr></thead>
+          <tbody>
+            <tr><td>아침 집중 등교</td><td>08:00~10:50, 10분 간격</td><td>10분</td></tr>
+            <tr><td>오전</td><td>11:00, 11:20, 11:40</td><td>20분</td></tr>
+            <tr><td>점심</td><td>운행없음</td><td>—</td></tr>
+            <tr><td>오후</td><td>13:00~17:40, 20분 간격</td><td>20분</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="dialog-note">운행 요일·휴일 조건은 제공된 자료에 없어 이 프로토타입에서 별도 제한하지 않습니다.</div>
+    </dialog>
+
+    <dialog id="guideDialog">
+      <div class="dialog-head">
+        <div><h2>노선 안내 참고 이미지</h2><p>사용자 제공 손그림 노선도 · 정차 위치 보정에 반영</p></div>
+        <button class="icon-btn" id="closeGuide" type="button" aria-label="노선 안내 닫기">×</button>
+      </div>
+      <div class="guide-wrap">
+        <section class="guide-section"><h3>1노선 (인문계)</h3><p>국제교류센터 → 중앙도서관 → 음악관 → 인문관 → 서문 → 제1과학관 → 천마관 → 사범대 → 국제교류센터</p><img src="route-guide-r1.png" alt="1노선 손그림 안내도" class="guide-image" /></section>
+        <section class="guide-section"><h3>2노선 (자연계)</h3><p>노천강당 → 제1·2과학관 → 생명응용과학대 → 기계관 → 천마아트센터/서문 → 약학관 → 생활과학대학 → 중앙도서관 → 노천강당</p><img src="route-guide-r2.png" alt="2노선 손그림 안내도" class="guide-image" /></section>
+      </div>
+      <div class="dialog-note">손그림 이미지는 참고용입니다. 앱 경로선은 정류장·수동 경유점과 OpenStreetMap 도로망으로 미리 계산해 저장한 고정 노선을 사용합니다.</div>
+    </dialog>
+
+    <dialog id="crowdConsentDialog">
+      <div class="dialog-head">
+        <div><h2>탑승 위치 공유</h2><p>버스 위치 정확도 개선을 위해 탑승 중 현재 위치를 익명으로 잠시 공유할 수 있습니다.</p></div>
+        <button class="icon-btn" id="closeCrowdConsent" type="button" aria-label="위치 공유 안내 닫기">×</button>
+      </div>
+      <div class="consent-body">
+        <ul><li>기본값은 공유 안 함입니다.</li><li>탑승 중에만 전송하며 샘플은 서버에서 약 2분 후 만료됩니다.</li><li>이름·학번·전화번호는 전송하지 않습니다.</li><li>운영 배포 시 HTTPS가 필요합니다.</li></ul>
+        <div class="dialog-actions"><button class="secondary-btn" id="declineCrowdShare">공유 안 함</button><button class="primary-inline-btn" id="acceptCrowdShare">익명 위치 공유</button></div>
+      </div>
+    </dialog>
+
+    <dialog id="crowdingDialog">
+      <div class="dialog-head">
+        <div><h2>현재 버스 혼잡도</h2><p>지금 타고 있는 차량 상태를 한 번만 선택해 주세요.</p></div>
+        <button class="icon-btn" id="closeCrowding" type="button" aria-label="혼잡도 창 닫기">×</button>
+      </div>
+      <div class="crowding-grid">
+        <button data-crowding="quiet"><strong>여유</strong><span>좌석 여유</span></button>
+        <button data-crowding="normal"><strong>보통</strong><span>일반적인 수준</span></button>
+        <button data-crowding="crowded"><strong>혼잡</strong><span>서서 갈 수 있음</span></button>
+        <button data-crowding="full"><strong>만석</strong><span>탑승이 어려울 수 있음</span></button>
+      </div>
+      <div class="dialog-note">앱 사용자 신고 기반 정보이며 실제 전체 승객 수를 의미하지 않습니다.</div>
+    </dialog>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    window.YU_ADS_CONFIG = {
+      // Node 서버의 /api/ad-config 공개 설정이 이 데모 기본값을 덮어씁니다.
+      provider: 'demo',
+      launchPlacementId: null,
+      linksPlacementId: null,
+      feedPlacementIds: [],
+      useEzoicAnchor: true,
+      bannerHeight: 58
+    };
+  </script>
+  <script src="ads.js"></script>
+  <script src="portal.js"></script>
+  <script src="route-utils.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

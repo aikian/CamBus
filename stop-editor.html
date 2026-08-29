@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#17191c" />
+  <title>CamBus 정류장 편집기</title>
+  <link rel="preconnect" href="https://tile.openstreetmap.org" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="stop-editor.css" />
+</head>
+<body>
+  <div class="editor-shell">
+    <aside class="editor-panel">
+      <header class="editor-header">
+        <div>
+          <span class="eyebrow">CamBus tools</span>
+          <h1>정류장 편집기</h1>
+          <p>정류장을 고른 다음 실제 승하차 지점을 지도에서 클릭하세요.</p>
+        </div>
+        <div class="header-links">
+          <a class="close-link" href="./path-editor.html">노선·시간</a>
+          <a class="close-link" href="./#bus" target="_blank" rel="noopener">본 화면 ↗</a>
+        </div>
+      </header>
+
+      <div class="route-tabs" role="tablist" aria-label="노선 선택">
+        <button class="route-tab active r1" id="routeTabR1" type="button" data-route="r1" role="tab" aria-selected="true">1노선 · 인문계</button>
+        <button class="route-tab r2" id="routeTabR2" type="button" data-route="r2" role="tab" aria-selected="false">2노선 · 자연계</button>
+      </div>
+
+      <section class="selected-card" aria-live="polite">
+        <div class="selected-order" id="selectedOrder">1</div>
+        <div class="selected-copy">
+          <span id="selectedCode">A02</span>
+          <strong id="selectedName">정류장을 불러오는 중</strong>
+          <small id="selectedCoord">—</small>
+        </div>
+        <button class="icon-action" id="copyCoordBtn" type="button" title="좌표 복사" aria-label="선택한 정류장 좌표 복사">⧉</button>
+      </section>
+
+      <div class="editor-actions primary-actions">
+        <button class="soft-button" id="guideButton" type="button">손그림 노선도</button>
+        <button class="soft-button" id="fitButton" type="button">노선 전체 보기</button>
+        <button class="soft-button" id="undoButton" type="button" disabled>되돌리기</button>
+      </div>
+
+      <label class="auto-next">
+        <input id="autoNextInput" type="checkbox" checked />
+        <span><b>찍고 다음 정류장으로</b><small>순서대로 빠르게 지정할 때 사용</small></span>
+      </label>
+
+      <div class="connection-status" id="connectionStatus">
+        <span class="status-dot"></span>
+        <span>노선 데이터를 불러오는 중…</span>
+      </div>
+
+      <div class="stop-list" id="stopList" aria-label="정류장 목록"></div>
+
+      <footer class="save-bar">
+        <div>
+          <strong id="saveState">저장된 좌표</strong>
+          <span id="updatedAt">아직 편집하지 않음</span>
+        </div>
+        <button class="save-button" id="saveButton" type="button" disabled>좌표 저장</button>
+      </footer>
+    </aside>
+
+    <main class="map-stage">
+      <div id="editorMap" aria-label="정류장 좌표 편집 지도"></div>
+      <div class="map-hint">
+        <strong>지도 클릭 = 선택한 정류장 이동</strong>
+        <span>핀을 직접 끌어도 됩니다. 실선은 도로를 따라 다시 연결한 노선입니다.</span>
+      </div>
+      <div class="route-legend">
+        <span><i class="legend-line road"></i>도로 연결</span>
+        <span><i class="legend-line straight"></i>정류장 순서</span>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="guideDialog">
+    <div class="dialog-head">
+      <div><span class="eyebrow">사용자 제공 원본</span><h2 id="guideTitle">손그림 노선도</h2></div>
+      <button class="dialog-close" id="closeGuideButton" type="button" aria-label="닫기">×</button>
+    </div>
+    <div class="guide-canvas"><img id="guideImage" alt="손그림 노선도" /></div>
+    <p>번호와 화살표 끝을 실제 건물 옆 도로와 비교해 찍어주세요.</p>
+  </dialog>
+
+  <div class="toast" id="editorToast" role="status" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="stop-editor.js"></script>
+</body>
+</html>

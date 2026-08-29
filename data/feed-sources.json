@@ -1,0 +1,28 @@
+[
+  {
+    "id": "yu-news",
+    "url": "https://www.yu.ac.kr/main/intro/yu-news.do",
+    "baseUrl": "https://www.yu.ac.kr",
+    "type": "news",
+    "badge": "영대소식",
+    "icon": "📢",
+    "source": "영남대학교",
+    "limit": 12,
+    "enabled": true,
+    "pages": 2,
+    "pageSize": 10
+  },
+  {
+    "id": "yu-academic",
+    "url": "https://www.yu.ac.kr/main/bachelor/bachelor-guide.do",
+    "baseUrl": "https://www.yu.ac.kr",
+    "type": "news",
+    "badge": "학사",
+    "icon": "🗓️",
+    "source": "영남대학교 학사안내",
+    "limit": 12,
+    "enabled": false,
+    "pages": 2,
+    "pageSize": 10
+  }
+]

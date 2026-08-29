@@ -1,0 +1,207 @@
+/**
+ * CamBus ad adapter.
+ * Default = demo/house-ad placeholders only.
+ * No network request is made until provider is changed to "ezoic" and publisher scripts/placement IDs are configured.
+ */
+(function () {
+  const DEFAULTS = {
+    provider: 'demo', // demo | ezoic | none
+    launchPlacementId: null,
+    linksPlacementId: null,
+    feedPlacementIds: [],
+    launchSessionKey: 'busyu-launch-ad-v1',
+    showLaunchOncePerSession: true,
+    useEzoicAnchor: true,
+    bannerHeight: 58,
+    networkScriptsReady: false
+  };
+  const cfg = Object.assign({}, DEFAULTS, window.YU_ADS_CONFIG || {});
+  let ezoicBaseInitialized = false;
+
+  async function loadRemoteConfig() {
+    try {
+      const response = await fetch('/api/ad-config', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`ad config ${response.status}`);
+      const remote = await response.json();
+      if (remote && typeof remote === 'object') Object.assign(cfg, remote);
+    } catch (error) {
+      console.info('CamBus ad config API unavailable; using bundled demo settings.', error);
+    }
+    window.dispatchEvent(new CustomEvent('cambus:ad-config-ready', { detail: { ...cfg } }));
+    return cfg;
+  }
+
+  function validPlacement(value) {
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  function setBannerHeight(px) {
+    document.documentElement.style.setProperty('--ad-banner-height', `${Math.max(0, Number(px) || 0)}px`);
+  }
+
+  function launchSeen() {
+    if (!cfg.showLaunchOncePerSession) return false;
+    try { return sessionStorage.getItem(cfg.launchSessionKey) === '1'; } catch { return false; }
+  }
+  function markLaunchSeen() {
+    if (!cfg.showLaunchOncePerSession) return;
+    try { sessionStorage.setItem(cfg.launchSessionKey, '1'); } catch {}
+  }
+
+  function dismissLaunchAd() {
+    const el = document.getElementById('launchAd');
+    if (!el || el.hidden) return;
+    el.hidden = true;
+    markLaunchSeen();
+    window.dispatchEvent(new CustomEvent('yu:launch-ad-closed'));
+  }
+
+  function showDemoSlots() {
+    document.getElementById('bottomAd')?.classList.add('ad-demo');
+    document.getElementById('launchAd')?.classList.add('ad-demo');
+    document.getElementById('linksAd')?.classList.add('ad-demo');
+  }
+
+  function ezoicCommand(fn) {
+    window.ezstandalone = window.ezstandalone || {};
+    window.ezstandalone.cmd = window.ezstandalone.cmd || [];
+    window.ezstandalone.cmd.push(fn);
+  }
+
+  function initEzoicBase() {
+    if (ezoicBaseInitialized) return;
+    ezoicBaseInitialized = true;
+
+    document.getElementById('bottomAd')?.classList.add('ad-network');
+    document.getElementById('launchAd')?.classList.add('ad-network');
+    document.getElementById('linksAd')?.classList.add('ad-network');
+
+    ezoicCommand(function () {
+      try {
+        if (typeof window.ezstandalone.config === 'function') {
+          window.ezstandalone.config({
+            anchorAdPosition: 'bottom',
+            anchorAdExpansion: false,
+            disableInterstitial: true
+          });
+        }
+        if (cfg.useEzoicAnchor && typeof window.ezstandalone.setEzoicAnchorAd === 'function') {
+          window.ezstandalone.setEzoicAnchorAd(true);
+        }
+
+        const ids = [];
+        const launchId = validPlacement(cfg.launchPlacementId);
+        const linksId = validPlacement(cfg.linksPlacementId);
+        const launchSlot = document.getElementById('launchAdSlot');
+        const linksSlot = document.getElementById('linksAdSlot');
+
+        if (launchId && launchSlot) {
+          launchSlot.innerHTML = `<div id="ezoic-pub-ad-placeholder-${launchId}"></div>`;
+          ids.push(launchId);
+        }
+        if (linksId && linksSlot) {
+          linksSlot.innerHTML = `<div id="ezoic-pub-ad-placeholder-${linksId}"></div>`;
+          ids.push(linksId);
+        }
+
+        if (typeof window.ezstandalone.showAds === 'function') {
+          if (ids.length) window.ezstandalone.showAds(...ids);
+          else window.ezstandalone.showAds();
+        }
+      } catch (e) {
+        console.warn('Ezoic init failed; CamBus continues without network ads.', e);
+      }
+    });
+  }
+
+  function attachFeedAds() {
+    if (cfg.provider !== 'ezoic' || !cfg.networkScriptsReady) return;
+    const placementIds = Array.isArray(cfg.feedPlacementIds) ? cfg.feedPlacementIds.map(validPlacement) : [];
+    const slots = [...document.querySelectorAll('.feed-inline-ad-slot')];
+    if (!slots.length) return;
+
+    const ids = [];
+    slots.forEach((slot, index) => {
+      const id = placementIds[index] || null;
+      if (!id) return; // keep the house/demo fallback when no placement is configured
+      const wrapper = slot.closest('.feed-inline-ad');
+      wrapper?.classList.add('ad-network');
+      slot.innerHTML = `<div id="ezoic-pub-ad-placeholder-${id}"></div>`;
+      ids.push(id);
+    });
+
+    if (!ids.length) return;
+    ezoicCommand(function () {
+      try {
+        if (typeof window.ezstandalone.showAds === 'function') window.ezstandalone.showAds(...ids);
+      } catch (e) {
+        console.warn('Ezoic feed placement failed.', e);
+      }
+    });
+  }
+
+  function init() {
+    setBannerHeight(cfg.provider === 'none' ? 0 : cfg.bannerHeight);
+
+    const launch = document.getElementById('launchAd');
+    const close = document.getElementById('closeLaunchAd');
+    if (close) close.addEventListener('click', dismissLaunchAd);
+
+    if (cfg.provider === 'none') {
+      if (launch) launch.hidden = true;
+      const bottom = document.getElementById('bottomAd');
+      const links = document.getElementById('linksAd');
+      if (bottom) bottom.hidden = true;
+      if (links) links.hidden = true;
+      document.querySelectorAll('.feed-inline-ad').forEach(el => { el.hidden = true; });
+      return;
+    }
+
+    if (launch) {
+      if (launchSeen()) launch.hidden = true;
+      else {
+        launch.hidden = false;
+        markLaunchSeen();
+      }
+    }
+
+    if (cfg.provider === 'ezoic' && cfg.networkScriptsReady) {
+      initEzoicBase();
+      attachFeedAds();
+    } else if (cfg.provider === 'ezoic') {
+      console.warn('Ezoic was selected but the approved header scripts are not marked ready; keeping visible house ads.');
+      showDemoSlots();
+    } else {
+      showDemoSlots();
+    }
+  }
+
+  window.addEventListener('busyu:feed-rendered', attachFeedAds);
+
+  window.addEventListener('busyu:page-change', event => {
+    if (cfg.provider !== 'ezoic' || !cfg.networkScriptsReady || !cfg.useEzoicAnchor) return;
+    const showMainAnchor = Number(event.detail?.index || 0) === 0;
+    ezoicCommand(function () {
+      try {
+        if (typeof window.ezstandalone.setEzoicAnchorAd === 'function') {
+          window.ezstandalone.setEzoicAnchorAd(showMainAnchor);
+        }
+      } catch (e) {
+        console.warn('Ezoic anchor page switch failed.', e);
+      }
+    });
+  });
+
+  async function bootstrap() {
+    await loadRemoteConfig();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+      init();
+    }
+  }
+
+  window.YUAds = { config: cfg, init, dismissLaunchAd, attachFeedAds, loadRemoteConfig };
+  bootstrap();
+})();

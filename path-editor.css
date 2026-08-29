@@ -1,0 +1,20 @@
+#pathMap { position:absolute; inset:0; background:#e9edef; }
+.path-selected { grid-template-columns:44px 1fr; }
+.path-controls { display:grid; gap:8px; padding:10px; border:1px solid var(--line); border-radius:13px; background:#f8f9fa; }
+.path-control-row { display:flex; gap:7px; }
+.soft-button.danger { color:#b73939; }
+.timing-control { display:grid; gap:7px; }
+.timing-control label { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.timing-control label b { font-size:11px; }
+.timing-control label span { color:var(--muted); font-size:9px; text-align:right; }
+.timing-control > div { display:grid; grid-template-columns:1fr auto; gap:7px; }
+.timing-control input { min-width:0; width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 10px; background:#fff; font-size:12px; }
+.timing-control button { min-width:82px; border:0; border-radius:10px; padding:9px 10px; background:#17191c; color:#fff; font-size:11px; font-weight:850; }
+.timing-control button.measuring { background:#d94848; }
+.leg-list .stop-row { grid-template-columns:30px 1fr auto; }
+.leg-time { min-width:44px; color:#787e86; font-size:9px; font-weight:850; text-align:right; }
+.legend-line.selected-leg { background:#ff9f1c; }
+.anchor-dot { width:11px; height:11px; display:inline-block; border:2px solid #fff; border-radius:50%; background:#ff9f1c; box-shadow:0 0 0 1px #d97c00; }
+.path-anchor-pin { width:28px; height:28px; display:grid; place-items:center; border:3px solid #fff; border-radius:9px; background:#ff9f1c; color:#fff; font-size:10px; font-weight:900; box-shadow:0 3px 12px rgba(0,0,0,.3); }
+.path-stop-pin { width:23px; height:23px; display:grid; place-items:center; border:3px solid #fff; border-radius:50%; background:var(--pin-color); color:#fff; font-size:8px; font-weight:900; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+button:focus-visible, a:focus-visible, input:focus-visible { outline:3px solid rgba(52,120,246,.36); outline-offset:2px; }

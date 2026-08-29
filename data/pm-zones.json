@@ -1,0 +1,14 @@
+[
+  {
+    "id": "pm-b02-bike-rack",
+    "name": "상경관 편의점 앞 자전거 거치대",
+    "type": "pm_parking",
+    "coord": null,
+    "searchAliases": ["상경관"],
+    "confidence": "building-relative",
+    "note": "영남대학교 2023 공지에서 전동킥보드 주차 장소로 안내. 정확한 핀은 OSM 상경관 위치를 기준으로 표시하며 현장 확인이 필요합니다.",
+    "sourceTitle": "전동킥보드 주차 안내",
+    "sourceUrl": "https://www.yu.ac.kr/daspo/community/notice.do?articleNo=5996093&mode=view",
+    "enabled": true
+  }
+]
