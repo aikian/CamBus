@@ -9,6 +9,12 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <title>BUS@YU · 영남대 순환버스</title>
+  <script>
+    // If user opens the site without a hash, redirect to the #bus view.
+    if (!location.hash) {
+      location.replace(location.pathname + '#bus');
+    }
+  </script>
   <link rel="preconnect" href="https://tile.openstreetmap.org" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3ynh+LPfRVm4A2x5K3IFGPCaPZ+8U=" crossorigin="" />
   <link rel="stylesheet" href="styles.css" />
