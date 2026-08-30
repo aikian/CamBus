@@ -1,6 +1,6 @@
 {
   "name": "cambus",
-  "version": "1.9.0",
+  "version": "2.0.0",
   "private": true,
   "description": "영남대학교 캠퍼스 순환버스 길찾기와 Picks 웹앱",
   "scripts": {

@@ -1,12 +1,16 @@
-const CACHE = 'cambus-v1.9.0-naming';
+const CACHE = 'cambus-v2.0.0-hardening';
 const SHELL = [
-  './', './index.html', './styles.css', './portal.js', './route-utils.js', './subway-router.js', './app.js', './map-ui.js', './ads.js', './install.js',
-  './admin.html', './privacy.html',
-  './stop-editor.html', './stop-editor.css', './stop-editor.js',
-  './path-editor.html', './path-editor.css', './path-editor.js',
-  './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './icon-192-maskable.png', './icon-512-maskable.png', './apple-touch-icon.png', './route-guide-r1.png', './route-guide-r2.png',
+  './', './index.html', './styles.css',
+  './app.js', './portal.js', './ads.js', './map-ui.js', './install.js',
+  './route-utils.js', './subway-router.js',
+  // Leaflet 은 자체 호스팅한다. 캐시에 있어야 오프라인에서도 지도가 뜬다.
+  './vendor/leaflet.js', './vendor/leaflet.css',
+  './manifest.webmanifest', './privacy.html',
+  './icon.svg', './icon-192.png', './icon-512.png',
+  './icon-192-maskable.png', './icon-512-maskable.png', './apple-touch-icon.png',
   './data/portal-feed.json', './data/portal-auto.json', './data/local-ads.json',
-  './data/route-timings.json', './data/route-stops.json', './data/route-paths.json', './data/subway-daegu.json'
+  './data/route-timings.json', './data/route-stops.json', './data/route-paths.json',
+  './data/subway-daegu.json'
 ];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -29,7 +33,10 @@ self.addEventListener('fetch', event => {
   }).catch(async () => {
     const hit = await caches.match(req);
     if (hit) return hit;
-    if (req.mode === 'navigate') return caches.match('./index.html');
+    if (req.mode === 'navigate') {
+      const shell = await caches.match('./index.html');
+      if (shell) return shell;
+    }
     return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   }));
 });

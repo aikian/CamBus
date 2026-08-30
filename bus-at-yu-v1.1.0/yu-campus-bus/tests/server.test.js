@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
@@ -38,7 +39,8 @@ test('health and public ad config are explicit', async () => {
   assert.equal(healthResponse.headers.get('x-content-type-options'), 'nosniff');
   const health = await healthResponse.json();
   assert.equal(health.ok, true);
-  assert.equal(health.version, '1.2.0');
+  // 버전은 VERSION 파일이 유일한 출처다. 하드코딩하면 릴리스마다 어긋난다.
+  assert.equal(health.version, fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim());
   assert.equal(health.adProvider, 'demo');
 
   const config = await fetch(`http://127.0.0.1:${port}/api/ad-config`).then(response => response.json());

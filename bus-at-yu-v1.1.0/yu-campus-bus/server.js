@@ -117,13 +117,40 @@ function prune(now = Date.now()) {
   for (const [key, row] of rate) if (row.windowStart + 60_000 <= now) rate.delete(key);
 }
 
-function allow(req, limit = 120) {
-  const ip = req.socket.remoteAddress || 'unknown';
+// 캠퍼스 와이파이는 NAT 라 수백 명이 같은 공인 IP 로 보인다. IP 하나에 낮은 한도를 걸면
+// 앱이 스스로를 막아버리므로, 프록시 뒤에서는 실제 클라이언트 IP 를 쓰고 한도도 넉넉히 잡는다.
+// CAMBUS_TRUST_PROXY=1 은 신뢰할 수 있는 프록시(예: Coolify/nginx) 뒤에서만 켠다.
+function clientKey(req) {
+  if (process.env.CAMBUS_TRUST_PROXY === '1') {
+    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (forwarded) return forwarded;
+  }
+  return req.socket.remoteAddress || 'unknown';
+}
+
+// TAGO 는 일 10,000건 한도라 GET 이어도 따로 막아야 한다.
+const upstreamRate = new Map();
+function allowUpstream(req, limit = 20) {
+  const key = clientKey(req);
   const now = Date.now();
-  let row = rate.get(ip);
+  let row = upstreamRate.get(key);
   if (!row || row.windowStart + 60_000 <= now) row = { windowStart: now, count: 0 };
   row.count += 1;
-  rate.set(ip, row);
+  upstreamRate.set(key, row);
+  if (upstreamRate.size > 5000) upstreamRate.clear();
+  return row.count <= limit;
+}
+
+function allow(req, limit = 600) {
+  // 읽기 전용 GET 은 캐시로 흡수되고 부작용이 없어 제한 대상에서 뺀다.
+  // 제한은 쓰기(POST)와 외부 API 를 태우는 요청에만 건다.
+  if (req.method === 'GET') return true;
+  const key = clientKey(req);
+  const now = Date.now();
+  let row = rate.get(key);
+  if (!row || row.windowStart + 60_000 <= now) row = { windowStart: now, count: 0 };
+  row.count += 1;
+  rate.set(key, row);
   return row.count <= limit;
 }
 
@@ -318,6 +345,28 @@ function readJsonFile(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
 
+let knownStopCache = { at: 0, names: new Set() };
+function knownStopNames() {
+  if (Date.now() - knownStopCache.at < 300000) return knownStopCache.names;
+  const names = new Set();
+  try {
+    const doc = loadRouteStops();
+    for (const route of Object.values(doc.routes || {})) {
+      for (const stop of route.stops || []) if (stop?.name) names.add(stop.name);
+    }
+  } catch {}
+  knownStopCache = { at: Date.now(), names };
+  return names;
+}
+
+let cachedVersion = null;
+function appVersion() {
+  if (cachedVersion) return cachedVersion;
+  try { cachedVersion = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); }
+  catch { cachedVersion = 'unknown'; }
+  return cachedVersion;
+}
+
 function loadRouteStops() {
   return readJsonFile(ROUTE_STOPS_FILE, { version: 1, updatedAt: null, routes: {} });
 }
@@ -330,9 +379,36 @@ function loopbackRequest(req) {
 // 리버스 프록시 뒤에서는 remoteAddress 가 프록시 주소라 루프백 검사만으로는 안전하지 않다.
 // CAMBUS_ADMIN_TOKEN 이 설정돼 있으면 그 토큰만 쓰기를 허용한다.
 // 토큰이 없으면(로컬 개발) 기존처럼 루프백만 허용한다.
+// 브라우저가 CORS 프리플라이트 없이 보낼 수 있는(=단순 요청) 본문 타입.
+// 이런 요청은 다른 사이트에서도 사용자 동의 없이 날아오므로 쓰기 API 에서 막는다.
+function jsonBodyRequest(req) {
+  const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  return type === 'application/json';
+}
+
+// 다른 출처(웹사이트)에서 건너온 요청인지. Origin 이 없으면 curl 등 비브라우저 요청이다.
+function crossSiteRequest(req) {
+  const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (site && site !== 'same-origin' && site !== 'none') return true;
+  const origin = req.headers['origin'];
+  if (!origin) return false;
+  const host = String(req.headers['host'] || '');
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 function adminAuthorized(req) {
   const expected = process.env.CAMBUS_ADMIN_TOKEN || '';
-  if (!expected) return loopbackRequest(req);
+  // 다른 사이트가 대신 보낸 요청은 토큰 유무와 무관하게 거부한다(CSRF 차단).
+  if (crossSiteRequest(req)) return false;
+  if (!expected) {
+    // 토큰이 없으면 로컬 개발로만 허용한다. 운영에서 실수로 열리지 않도록
+    // CAMBUS_DEV=1 을 명시할 때만 루프백 폴백을 쓴다.
+    return process.env.CAMBUS_DEV === '1' && loopbackRequest(req);
+  }
   const header = String(req.headers['authorization'] || '');
   const provided = header.startsWith('Bearer ') ? header.slice(7) : '';
   if (!provided) return false;
@@ -343,9 +419,17 @@ function adminAuthorized(req) {
 }
 
 function requireAdmin(req, res) {
-  if (adminAuthorized(req)) return true;
-  json(res, 401, { error: 'admin_auth_required' });
-  return false;
+  if (!adminAuthorized(req)) {
+    json(res, 401, { error: 'admin_auth_required' });
+    return false;
+  }
+  // 쓰기 요청은 application/json 만 받는다. text/plain 등은 프리플라이트 없이
+  // 다른 사이트에서 보낼 수 있어 CSRF 경로가 된다.
+  if (req.method !== 'GET' && !jsonBodyRequest(req)) {
+    json(res, 415, { error: 'json_body_required' });
+    return false;
+  }
+  return true;
 }
 
 function validatedRouteStops(input) {
@@ -594,9 +678,15 @@ function recordMetric(type, payload = {}) {
     if (!bucket[key] || typeof bucket[key] !== 'object') bucket[key] = { events: {}, destinations: {}, feedClicks: {} };
     const row = bucket[key];
     row.events[type] = (Number(row.events[type]) || 0) + 1;
-    if (type === 'route_search' && typeof payload.destination === 'string' && payload.destination && payload.destination !== '지도에서 선택한 위치') {
-      const d = payload.destination.slice(0,80);
-      row.destinations[d] = (Number(row.destinations[d]) || 0) + 1;
+    // 사용자가 자유롭게 입력한 목적지 텍스트는 저장하지 않는다.
+    // 개인정보처리방침이 "개인 식별 정보 없이 횟수만 누적"이라고 약속하고 있고,
+    // 무엇을 칠지 통제할 수 없어 기숙사 호실·이름 등이 들어올 수 있다.
+    // 집계가 필요하면 알려진 정류장 이름과 정확히 일치할 때만 센다.
+    if (type === 'route_search' && typeof payload.destination === 'string') {
+      const name = payload.destination.slice(0, 40);
+      if (knownStopNames().has(name)) {
+        row.destinations[name] = (Number(row.destinations[name]) || 0) + 1;
+      }
     }
     if (type === 'feed_click' && typeof payload.itemId === 'string') {
       const id = payload.itemId.slice(0,80);
@@ -845,7 +935,7 @@ async function api(req, res, pathname) {
   prune();
 
   if (req.method === 'GET' && pathname === '/api/health') {
-    return json(res, 200, { ok: true, service: 'cambus', version: '1.2.0', adProvider: publicAdConfig().provider, now: new Date().toISOString() });
+    return json(res, 200, { ok: true, service: 'cambus', version: appVersion(), adProvider: publicAdConfig().provider, now: new Date().toISOString() });
   }
   if (req.method === 'GET' && pathname === '/api/ad-config') {
     return json(res, 200, publicAdConfig());
@@ -858,6 +948,7 @@ async function api(req, res, pathname) {
     return json(res, 200, { enabled: transitApi.isConfigured() });
   }
   if (req.method === 'GET' && pathname === '/api/city-bus/stops') {
+    if (!allowUpstream(req)) return json(res, 429, { error: 'rate_limited' });
     const lat = Number(new URL(req.url, 'http://localhost').searchParams.get('lat'));
     const lng = Number(new URL(req.url, 'http://localhost').searchParams.get('lng'));
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return json(res, 400, { error: 'bad_coords' });
@@ -868,6 +959,7 @@ async function api(req, res, pathname) {
     }
   }
   if (req.method === 'GET' && pathname === '/api/city-bus/direct') {
+    if (!allowUpstream(req)) return json(res, 429, { error: 'rate_limited' });
     const params = new URL(req.url, 'http://localhost').searchParams;
     const fromLat = Number(params.get('fromLat')), fromLng = Number(params.get('fromLng'));
     const toLat = Number(params.get('toLat')), toLng = Number(params.get('toLng'));
@@ -879,6 +971,7 @@ async function api(req, res, pathname) {
     }
   }
   if (req.method === 'GET' && pathname === '/api/city-bus/arrivals') {
+    if (!allowUpstream(req)) return json(res, 429, { error: 'rate_limited' });
     const params = new URL(req.url, 'http://localhost').searchParams;
     const cityCode = params.get('cityCode');
     const nodeId = params.get('nodeId');
@@ -1065,11 +1158,40 @@ async function api(req, res, pathname) {
   return json(res, 404, { error: 'not_found' });
 }
 
+// 프로젝트 루트를 통째로 노출하면 server.js(인증 로직), Dockerfile, data/ 의 방문자
+// 통계까지 공개된다. 브라우저가 실제로 받아야 하는 것만 허용한다.
+const PUBLIC_FILES = new Set([
+  'index.html', 'styles.css', 'app.js', 'portal.js', 'ads.js', 'map-ui.js',
+  'install.js', 'route-utils.js', 'subway-router.js', 'sw.js',
+  'manifest.webmanifest', 'privacy.html',
+  'icon.svg', 'icon-192.png', 'icon-512.png',
+  'icon-192-maskable.png', 'icon-512-maskable.png', 'apple-touch-icon.png',
+  'vendor/leaflet.js', 'vendor/leaflet.css',
+  'data/route-stops.json', 'data/route-paths.json', 'data/route-timings.json',
+  'data/subway-daegu.json', 'data/portal-feed.json', 'data/portal-auto.json',
+  'data/local-ads.json', 'data/pm-zones.json'
+]);
+// 로컬 편집 도구는 운영에 배포하지 않는다.
+const DEV_ONLY_FILES = new Set([
+  'admin.html', 'stop-editor.html', 'stop-editor.css', 'stop-editor.js',
+  'path-editor.html', 'path-editor.css', 'path-editor.js',
+  'route-guide-r1.png', 'route-guide-r2.png'
+]);
+
+function publiclyServable(relPath) {
+  if (PUBLIC_FILES.has(relPath)) return true;
+  if (relPath.startsWith('vendor/images/')) return true;   // Leaflet 마커 이미지
+  if (DEV_ONLY_FILES.has(relPath)) return process.env.CAMBUS_DEV === '1';
+  return false;
+}
+
 function serveStatic(req, res, pathname) {
   let rel = pathname === '/' ? '/index.html' : pathname;
   try { rel = decodeURIComponent(rel); } catch { return json(res, 400, { error: 'bad_path' }); }
   const file = path.resolve(ROOT, '.' + rel);
   if (!file.startsWith(ROOT + path.sep)) return json(res, 403, { error: 'forbidden' });
+  const relKey = path.relative(ROOT, file).split(path.sep).join('/');
+  if (!publiclyServable(relKey)) return json(res, 404, { error: 'not_found' });
   fs.stat(file, (err, stat) => {
     if (err || !stat.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

@@ -3,7 +3,7 @@
   --muted:#737982;
   --line:#e4e7eb;
   --panel:#fff;
-  --r1:#e63946;
+  --r1:#B3261E;
   --r2:#3478f6;
   --shadow:0 18px 48px rgba(16,24,40,.18);
 }
@@ -22,7 +22,7 @@ button { cursor:pointer; }
 .header-links { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
 .route-tabs { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
 .route-tab { border:1px solid var(--line); border-radius:12px; padding:10px 8px; background:#fff; color:#646a72; font-size:12px; font-weight:850; }
-.route-tab.active.r1 { border-color:rgba(230,57,70,.4); background:rgba(230,57,70,.1); color:var(--r1); }
+.route-tab.active.r1 { border-color:rgba(179,38,30,.4); background:rgba(179,38,30,.1); color:var(--r1); }
 .route-tab.active.r2 { border-color:rgba(52,120,246,.4); background:rgba(52,120,246,.1); color:var(--r2); }
 .selected-card { min-height:78px; display:grid; grid-template-columns:44px 1fr 34px; align-items:center; gap:11px; padding:12px; border:1px solid #dfe3e7; border-radius:15px; background:#f7f9fa; }
 .selected-order { width:44px; height:44px; display:grid; place-items:center; border-radius:13px; background:var(--route-color,var(--r1)); color:#fff; font-size:17px; font-weight:900; box-shadow:0 5px 14px color-mix(in srgb, var(--route-color,var(--r1)) 28%, transparent); }

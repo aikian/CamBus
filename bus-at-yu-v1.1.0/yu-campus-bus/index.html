@@ -14,7 +14,8 @@
   <meta name="apple-mobile-web-app-title" content="CamBus" />
   <title>CamBus · 영남대 순환버스</title>
   <link rel="preconnect" href="https://tile.openstreetmap.org" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Leaflet 은 자체 호스팅한다. CDN 이 막히면 앱 전체가 죽기 때문. -->
+  <link rel="stylesheet" href="vendor/leaflet.css" />
   <!-- EZOIC HEAD START: 승인 후 대시보드가 발급한 CMP/header 스크립트 원문만 여기에 설치합니다. ADS_PLAN.md 참고. -->
   <!-- EZOIC HEAD END -->
   <link rel="stylesheet" href="styles.css" />
@@ -248,7 +249,7 @@
     <div class="toast" id="toast"></div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="vendor/leaflet.js"></script>
   <script>
     window.YU_ADS_CONFIG = {
       // Node 서버의 /api/ad-config 공개 설정이 이 데모 기본값을 덮어씁니다.
@@ -267,5 +268,24 @@
   <script src="app.js"></script>
   <script src="map-ui.js"></script>
   <script src="install.js"></script>
+  <script>
+    // app.js 가 실패해도 서비스워커 등록과 오류 로깅은 살아 있어야 한다.
+    (function () {
+      var local = ['localhost', '127.0.0.1', '::1'].indexOf(location.hostname) >= 0;
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || local)) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function (err) {
+            console.warn('Service worker registration failed', err);
+          });
+        });
+      }
+      window.addEventListener('unhandledrejection', function (e) {
+        console.error('Unhandled promise rejection:', e.reason);
+      });
+      window.addEventListener('error', function (e) {
+        console.error('Uncaught error:', e.message, e.filename + ':' + e.lineno);
+      });
+    })();
+  </script>
 </body>
 </html>

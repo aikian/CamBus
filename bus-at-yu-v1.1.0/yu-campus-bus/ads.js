@@ -211,6 +211,11 @@
   document.addEventListener('click', event => {
     const el = event.target.closest?.('[data-ad-id]');
     if (!el) return;
+    // 광고 닫기 버튼이나 광고 영역의 여백 클릭까지 집계하면 클릭률이 부풀려진다.
+    // 광고주에게 보고하는 수치이므로, 실제 광고 링크를 눌렀을 때만 센다.
+    const target = event.target.closest?.('a, .ad-creative, [data-ad-click]');
+    if (!target || !el.contains(target)) return;
+    if (event.target.closest?.('.ad-close, [data-ad-dismiss]')) return;
     sendAdEvent(el.dataset.adId, el.dataset.adSlot || 'unknown', 'click');
   }, true);
 

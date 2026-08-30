@@ -4,7 +4,7 @@
   "routes": {
     "r1": {
       "name": "셔틀1 (인문계)",
-      "color": "#e63946",
+      "color": "#B3261E",
       "guideImage": "route-guide-r1.png",
       "stops": [
         {

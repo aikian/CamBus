@@ -8,6 +8,31 @@
 const CAMPUS_CENTER = [35.8327, 128.7576];
 const CAMPUS_BOUNDS = [[35.8250, 128.7493], [35.8386, 128.7639]];
 const EFFECTIVE_DATE = '2026-09-01';
+// 교내 순환버스는 평일에만 운행합니다(학생지원팀 공지 기준 평일 시간표만 고시).
+// 주말·공휴일에 "3분 후 도착" 이 뜨면 안 되므로 운행일을 먼저 가립니다.
+// 공휴일은 학사일정에 맞춰 아래 목록을 갱신하세요.
+const HOLIDAYS_2026 = new Set([
+  '2026-09-24', '2026-09-25', '2026-09-26',   // 추석 연휴
+  '2026-10-03', '2026-10-09',                 // 개천절 · 한글날
+  '2026-12-25'                                // 성탄절
+]);
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function isServiceDay(date) {
+  const day = date.getDay();
+  if (day === 0 || day === 6) return false;      // 주말 미운행
+  return !HOLIDAYS_2026.has(dateKey(date));
+}
+
+function serviceDayNote(date) {
+  const day = date.getDay();
+  if (day === 0 || day === 6) return '주말은 순환버스를 운행하지 않습니다.';
+  if (HOLIDAYS_2026.has(dateKey(date))) return '공휴일은 순환버스를 운행하지 않습니다.';
+  return null;
+}
 const DWELL_SECONDS = 5 * 60;
 // 승하차 정차시간. 기점(각 노선 출발역)과 서문은 별도 정차 규칙이 있어 제외하고, 나머지
 // 정류장에 일괄 적용합니다. 25인승 셔틀에서 문 열고 몇 명 타고 내리는 데 걸리는 현실적인
@@ -92,7 +117,7 @@ const ROUTES = {
     id: 'r1',
     name: '셔틀1 (인문계)',
     short: '셔틀1',
-    color: '#e63946',
+    color: '#B3261E',
     guideImage: 'route-guide-r1.png',
     guideNote: '사용자가 보내준 손그림 경로 이미지 기준으로 정차 위치를 수동 보정했습니다.',
     stops: [
@@ -204,6 +229,14 @@ function effectiveNow() {
   return state.departureAt || nowClock();
 }
 
+if (typeof L === 'undefined') {
+  // Leaflet 을 못 불러오면 지도는 못 그리지만, 최소한 무엇이 잘못됐는지는 알려준다.
+  document.getElementById('map').innerHTML =
+    '<div class="map-fallback"><strong>지도를 불러오지 못했습니다.</strong>' +
+    '<span>네트워크 연결을 확인한 뒤 새로고침해 주세요.</span></div>';
+  throw new Error('Leaflet failed to load');
+}
+
 const map = L.map('map', { zoomControl: false, attributionControl: true, minZoom: 14, maxZoom: 20 })
   .setView(CAMPUS_CENTER, 16);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -251,9 +284,12 @@ function stopEtaHtml(routeId, stopIdx) {
   const arrivals = nextArrivalsAtStop(routeId, stopIdx, nowClock(), 2);
   if (!arrivals.length) {
     const effective = new Date(EFFECTIVE_DATE + 'T00:00:00');
-    return nowClock() < effective
-      ? `<div class="stop-eta"><b>다음 버스</b><span>${EFFECTIVE_DATE}부터 조정 시간표 적용</span></div>`
-      : '<div class="stop-eta"><b>다음 버스</b><span>오늘 남은 운행 없음</span></div>';
+    const today = nowClock();
+    if (today < effective) {
+      return `<div class="stop-eta"><b>다음 버스</b><span>${EFFECTIVE_DATE}부터 조정 시간표 적용</span></div>`;
+    }
+    const note = serviceDayNote(today);
+    return `<div class="stop-eta"><b>다음 버스</b><span>${note || '오늘 남은 운행 없음'}</span></div>`;
   }
   return `<div class="stop-eta"><b>다음 버스</b>${arrivals.map((a,i) => `<span>${i === 0 ? '약 ' + Math.max(1, Math.ceil(a.wait / 60)) + '분 후' : timeText(a.arrival)} <small>${a.departure} 출발편</small></span>`).join('')}</div>`;
 }
@@ -732,7 +768,7 @@ function activeTrips(routeId, now = nowClock()) {
   const model = state.routeModels[routeId];
   if (!model?.ok) return [];
   const effective = new Date(EFFECTIVE_DATE + 'T00:00:00');
-  if (now < effective) return [];
+  if (now < effective || !isServiceDay(now)) return [];
   return SCHEDULE.map((time, idx) => {
     const dep = scheduleDate(time, now);
     const elapsed = (now - dep) / 1000;
@@ -1289,7 +1325,7 @@ function nextArrivalsAtStop(routeId, stopIdx, now = nowClock(), limit = 2) {
   const model = state.routeModels[routeId];
   if (!model?.ok) return [];
   const effective = new Date(EFFECTIVE_DATE + 'T00:00:00');
-  if (now < effective) return [];
+  if (now < effective || !isServiceDay(now)) return [];
   const canonicalIndex = canonicalStopIndex(ROUTES[routeId].stops.length, stopIdx);
   const offset = model.offsets[canonicalIndex ?? stopIdx] || 0;
   return SCHEDULE.map(t => {
@@ -1598,120 +1634,129 @@ async function planRoutes() {
     }
   }
 
-  document.getElementById('routeBtn').disabled = true;
-  document.getElementById('results').innerHTML = '<div class="empty-state"><strong>경로 계산 중…</strong><p>도보 경로와 다음 순환버스를 비교하고 있습니다.</p></div>';
-  clearPlanLayers();
+  const routeButton = document.getElementById('routeBtn');
+  routeButton.disabled = true;
+  try {
+    document.getElementById('results').innerHTML = '<div class="empty-state"><strong>경로 계산 중…</strong><p>도보 경로와 다음 순환버스를 비교하고 있습니다.</p></div>';
+    clearPlanLayers();
 
-  let plans = [];
-  const direct = walkEstimate(state.user, state.destination);
-  if (direct.ok) {
-    plans.push({ type: 'walk', duration: direct.duration, distance: direct.distance, geometry: direct.geometry, title: '도보', steps: [`도보 ${mToText(direct.distance)}`] });
-  }
+    let plans = [];
+    const direct = walkEstimate(state.user, state.destination);
+    if (direct.ok) {
+      plans.push({ type: 'walk', duration: direct.duration, distance: direct.distance, geometry: direct.geometry, title: '도보', steps: [`도보 ${mToText(direct.distance)}`] });
+    }
 
-  // 두 노선은 서로 독립이라 함께 계산합니다(각 노선이 보행 경로를 여러 번 부릅니다).
-  const routeJobs = ['r1', 'r2'].map(async routeId => {
-    const route = ROUTES[routeId], model = state.routeModels[routeId];
-    if (!model?.ok) return null;
+    // 두 노선은 서로 독립이라 함께 계산합니다(각 노선이 보행 경로를 여러 번 부릅니다).
+    const routeJobs = ['r1', 'r2'].map(async routeId => {
+      const route = ROUTES[routeId], model = state.routeModels[routeId];
+      if (!model?.ok) return null;
 
-    // 승·하차 후보를 가까운 3개로 미리 자르면, 같은 역을 두 번 서는 노선에서 정작 가까운 쪽
-    // 정차가 후보에서 빠질 수 있습니다. 구간시간 계산은 네트워크 호출이 없어 값싸므로 모든
-    // 조합을 평가한 뒤, 상위 몇 개만 실제 보행 경로를 구해 진짜 소요시간으로 최종 선택합니다.
-    const stopEntries = serviceStopEntries(route.stops);
-    const rough = [];
-    for (const { stop: bs, index: bi } of stopEntries) {
-      const next = nextArrivalAtStop(routeId, bi, effectiveNow());
-      if (!next) continue;
-      const bd = haversine(state.user, bs.coord);
-      for (const { stop: as, index: ai } of stopEntries) {
-        const ride = rideSeconds(routeId, bi, ai);
-        if (ride == null) continue;
-        const ad = haversine(state.destination, as.coord);
-        rough.push({ bs, bi, as, ai, ride, next, score: bd / 1.2 + next.wait + ride + ad / 1.2 });
+      // 승·하차 후보를 가까운 3개로 미리 자르면, 같은 역을 두 번 서는 노선에서 정작 가까운 쪽
+      // 정차가 후보에서 빠질 수 있습니다. 구간시간 계산은 네트워크 호출이 없어 값싸므로 모든
+      // 조합을 평가한 뒤, 상위 몇 개만 실제 보행 경로를 구해 진짜 소요시간으로 최종 선택합니다.
+      const stopEntries = serviceStopEntries(route.stops);
+      const rough = [];
+      for (const { stop: bs, index: bi } of stopEntries) {
+        const next = nextArrivalAtStop(routeId, bi, effectiveNow());
+        if (!next) continue;
+        const bd = haversine(state.user, bs.coord);
+        for (const { stop: as, index: ai } of stopEntries) {
+          const ride = rideSeconds(routeId, bi, ai);
+          if (ride == null) continue;
+          const ad = haversine(state.destination, as.coord);
+          rough.push({ bs, bi, as, ai, ride, next, score: bd / 1.2 + next.wait + ride + ad / 1.2 });
+        }
+      }
+      if (!rough.length) return null;
+      rough.sort((a, b) => a.score - b.score);
+
+      const verified = await Promise.all(rough.slice(0, BUS_CANDIDATES_TO_VERIFY).map(async cand => {
+        const walkIn = walkEstimate(state.user, cand.bs.coord);
+        const walkOut = walkEstimate(cand.as.coord, state.destination);
+        if (!walkIn.ok || !walkOut.ok) return null;
+        const next = nextArrivalAtStop(routeId, cand.bi, effectiveNow());
+        if (!next) return null;
+        return { ...cand, walkIn, walkOut, next, total: walkIn.duration + next.wait + cand.ride + walkOut.duration };
+      }));
+      let best = null;
+      for (const cand of verified) if (cand && (!best || cand.total < best.total)) best = cand;
+      if (!best) return null;
+
+      return {
+        type: 'bus',
+        routeId,
+        duration: best.total,
+        distance: best.walkIn.distance + best.walkOut.distance,
+        board: best.bs,
+        alight: best.as,
+        boardIdx: best.bi,
+        alightIdx: best.ai,
+        legIndices: routeLegIndices(route.stops.length, best.bi, best.ai),
+        walkIn: best.walkIn,
+        walkOut: best.walkOut,
+        wait: best.next.wait,
+        ride: best.ride,
+        busArrival: best.next.arrival,
+        baseDeparture: best.next.departure,
+        title: `${route.short} 이용`,
+        steps: [
+          `${best.bs.name}까지 도보 ${mToText(best.walkIn.distance)}`,
+          `${timeText(best.next.arrival)}경 승차 · 예상 대기 ${secToMin(best.next.wait)}분`,
+          `${best.as.name} 하차 · 버스 약 ${secToMin(best.ride)}분`,
+          `목적지까지 도보 ${mToText(best.walkOut.distance)}`
+        ]
+      };
+    });
+    for (const plan of await Promise.all(routeJobs)) if (plan) plans.push(plan);
+
+    const offCampus = await buildOffCampusPlan();
+    if (offCampus) plans.push(offCampus);
+    const cityBus = await buildCityBusPlan();
+    if (cityBus) plans.push(cityBus);
+
+    // 환승 조합은 많지만 대부분 쓸모없습니다. 어느 환승역이 유리한지는 기기에서 직선거리로
+    // 먼저 추려내고, 실제 보행 경로는 가장 그럴듯한 조합에만 씁니다(공개 라우팅 서버 부담 최소화).
+    const transferCandidates = [];
+    for (const station of TRANSFER_STATIONS) {
+      for (const first of station.members) {
+        for (const second of station.members) {
+          if (first.routeId === second.routeId) continue;
+          const firstStops = ROUTES[first.routeId]?.stops || [];
+          const secondStops = ROUTES[second.routeId]?.stops || [];
+          const nearBoard = Math.min(...firstStops.map(s => haversine(state.user, s.coord)));
+          const nearAlight = Math.min(...secondStops.map(s => haversine(state.destination, s.coord)));
+          if (!Number.isFinite(nearBoard) || !Number.isFinite(nearAlight)) continue;
+          transferCandidates.push({ station, first, second, score: nearBoard + nearAlight });
+        }
       }
     }
-    if (!rough.length) return null;
-    rough.sort((a, b) => a.score - b.score);
+    transferCandidates.sort((a, b) => a.score - b.score);
+    const transferPlans = await Promise.all(
+      transferCandidates.slice(0, TRANSFER_CANDIDATES_TO_VERIFY)
+        .map(c => buildTransferPlan(c.station, c.first, c.second))
+    );
+    for (const plan of transferPlans) if (plan) plans.push(plan);
 
-    const verified = await Promise.all(rough.slice(0, BUS_CANDIDATES_TO_VERIFY).map(async cand => {
-      const walkIn = walkEstimate(state.user, cand.bs.coord);
-      const walkOut = walkEstimate(cand.as.coord, state.destination);
-      if (!walkIn.ok || !walkOut.ok) return null;
-      const next = nextArrivalAtStop(routeId, cand.bi, effectiveNow());
-      if (!next) return null;
-      return { ...cand, walkIn, walkOut, next, total: walkIn.duration + next.wait + cand.ride + walkOut.duration };
-    }));
-    let best = null;
-    for (const cand of verified) if (cand && (!best || cand.total < best.total)) best = cand;
-    if (!best) return null;
+    // 캠퍼스 밖에서 출발하면 "18km 걷기" 같은 후보가 산술적으로는 만들어집니다.
+    // 아무도 택하지 않을 경로는 결과에서 빼서 카카오맵처럼 현실적인 것만 남깁니다.
+    // 도보 3km 초과 경로는 아무도 택하지 않으므로 항상 제외합니다.
+    plans = plans.filter(p => p.type !== 'walk' || p.distance <= MAX_WALK_ONLY_METERS);
+    // 정류장 접근 도보가 과한 경로도 뺍니다. 단, 전부 걸러지면 그나마 나은 걸 남깁니다.
+    const reachable = plans.filter(p => ((p.walkIn?.distance ?? 0) + (p.walkOut?.distance ?? 0)) <= MAX_ACCESS_WALK_METERS);
+    if (reachable.length) plans = reachable;
 
-    return {
-      type: 'bus',
-      routeId,
-      duration: best.total,
-      distance: best.walkIn.distance + best.walkOut.distance,
-      board: best.bs,
-      alight: best.as,
-      boardIdx: best.bi,
-      alightIdx: best.ai,
-      legIndices: routeLegIndices(route.stops.length, best.bi, best.ai),
-      walkIn: best.walkIn,
-      walkOut: best.walkOut,
-      wait: best.next.wait,
-      ride: best.ride,
-      busArrival: best.next.arrival,
-      baseDeparture: best.next.departure,
-      title: `${route.short} 이용`,
-      steps: [
-        `${best.bs.name}까지 도보 ${mToText(best.walkIn.distance)}`,
-        `${timeText(best.next.arrival)}경 승차 · 예상 대기 ${secToMin(best.next.wait)}분`,
-        `${best.as.name} 하차 · 버스 약 ${secToMin(best.ride)}분`,
-        `목적지까지 도보 ${mToText(best.walkOut.distance)}`
-      ]
-    };
-  });
-  for (const plan of await Promise.all(routeJobs)) if (plan) plans.push(plan);
-
-  const offCampus = await buildOffCampusPlan();
-  if (offCampus) plans.push(offCampus);
-  const cityBus = await buildCityBusPlan();
-  if (cityBus) plans.push(cityBus);
-
-  // 환승 조합은 많지만 대부분 쓸모없습니다. 어느 환승역이 유리한지는 기기에서 직선거리로
-  // 먼저 추려내고, 실제 보행 경로는 가장 그럴듯한 조합에만 씁니다(공개 라우팅 서버 부담 최소화).
-  const transferCandidates = [];
-  for (const station of TRANSFER_STATIONS) {
-    for (const first of station.members) {
-      for (const second of station.members) {
-        if (first.routeId === second.routeId) continue;
-        const firstStops = ROUTES[first.routeId]?.stops || [];
-        const secondStops = ROUTES[second.routeId]?.stops || [];
-        const nearBoard = Math.min(...firstStops.map(s => haversine(state.user, s.coord)));
-        const nearAlight = Math.min(...secondStops.map(s => haversine(state.destination, s.coord)));
-        if (!Number.isFinite(nearBoard) || !Number.isFinite(nearAlight)) continue;
-        transferCandidates.push({ station, first, second, score: nearBoard + nearAlight });
-      }
-    }
+    plans.sort((a, b) => a.duration - b.duration);
+    trackMetric('route_search', { destination: state.destinationName || destinationInput || '' });
+    renderPlans(plans);
+    if (plans[0]) drawPlan(plans[0]);
+  } catch (error) {
+    // 여기서 던지면 버튼이 계속 잠긴 채 '계산 중…' 으로 멈춘다. 반드시 되살린다.
+    console.error('Route planning failed', error);
+    document.getElementById('results').innerHTML =
+      '<div class="empty-state"><strong>경로를 계산하지 못했습니다.</strong><p>잠시 후 다시 시도해 주세요.</p></div>';
+  } finally {
+    routeButton.disabled = false;
   }
-  transferCandidates.sort((a, b) => a.score - b.score);
-  const transferPlans = await Promise.all(
-    transferCandidates.slice(0, TRANSFER_CANDIDATES_TO_VERIFY)
-      .map(c => buildTransferPlan(c.station, c.first, c.second))
-  );
-  for (const plan of transferPlans) if (plan) plans.push(plan);
-
-  // 캠퍼스 밖에서 출발하면 "18km 걷기" 같은 후보가 산술적으로는 만들어집니다.
-  // 아무도 택하지 않을 경로는 결과에서 빼서 카카오맵처럼 현실적인 것만 남깁니다.
-  // 도보 3km 초과 경로는 아무도 택하지 않으므로 항상 제외합니다.
-  plans = plans.filter(p => p.type !== 'walk' || p.distance <= MAX_WALK_ONLY_METERS);
-  // 정류장 접근 도보가 과한 경로도 뺍니다. 단, 전부 걸러지면 그나마 나은 걸 남깁니다.
-  const reachable = plans.filter(p => ((p.walkIn?.distance ?? 0) + (p.walkOut?.distance ?? 0)) <= MAX_ACCESS_WALK_METERS);
-  if (reachable.length) plans = reachable;
-
-  plans.sort((a, b) => a.duration - b.duration);
-  trackMetric('route_search', { destination: state.destinationName || destinationInput || '' });
-  renderPlans(plans);
-  if (plans[0]) drawPlan(plans[0]);
-  document.getElementById('routeBtn').disabled = false;
 }
 
 // 카카오맵처럼 "도보 3분 › 셔틀2 5분 › 도보 1분" 한 줄로 경로 구성을 먼저 보여줍니다.
@@ -2480,6 +2525,7 @@ bootMap().catch(error => {
 });
 
 
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1', '::1'].includes(location.hostname))) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(err => console.warn('Service worker registration failed', err)));
+// 서비스워커 등록은 index.html 의 인라인 스크립트가 담당한다.
+// (이 파일에서 예외가 나도 등록이 진행되도록 분리했다)
+if (false) {
 }
