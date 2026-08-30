@@ -33,7 +33,12 @@ body.route-open .page-switch, body.route-open .main-page-edge, body.route-open .
 /* 제목 줄은 빼고 닫기 버튼만 남긴다(데스크톱은 끌어내릴 수 없으므로 x 가 필요). */
 .panel-head { display:flex; align-items:center; justify-content:flex-end; padding:0 0 6px; }
 .panel-head .brand-row { display:none; }
-.panel-body { display:flex; flex-direction:column; gap:9px; overflow:auto; -webkit-overflow-scrolling:touch; }
+.panel-body {
+  display:flex; flex-direction:column; gap:9px;
+  /* flex 자식은 기본 min-height:auto 라 내용만큼 늘어나 스크롤이 생기지 않는다. */
+  flex:1 1 auto; min-height:0;
+  overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+}
 .brand-row { display:flex; justify-content:space-between; align-items:center; }
 .brand { font-size: 20px; font-weight: 800; letter-spacing: -.4px; }
 .brand-sub { margin-top: 2px; color: var(--muted); font-size: 12px; }
@@ -151,6 +156,12 @@ table { width:100%; border-collapse:collapse; font-size:13px; } th,td { padding:
     touch-action:none; cursor:grab;
   }
   .sheet-handle span { display:block; width:40px; height:5px; margin:0 auto; border-radius:5px; background:#d3d6da; }
+  /* 시트를 절반만 올린 상태에서는 패널 아래쪽이 화면 밖에 있다.
+     실제로 보이는 높이(--sheet-tall - --sheet-y)만큼만 스크롤 영역으로 잡아야
+     손가락으로 목록을 끝까지 내릴 수 있다. */
+  .route-panel.open .panel-body {
+    max-height: calc(var(--sheet-tall) - var(--sheet-y) - 34px - max(12px, env(safe-area-inset-bottom)));
+  }
   .route-panel.dragging .sheet-handle { cursor:grabbing; }
   /* 시트는 손잡이를 내려 닫으므로 헤더(닫기 버튼)까지 뺀다. */
   .panel-head { display:none; }
@@ -620,3 +631,20 @@ textarea:focus-visible,
 
 .policy-link { color:#8a8f96; text-decoration:underline; text-underline-offset:2px; }
 .policy-link:hover { color:#5c6169; }
+
+/* 모바일 터치 영역 보정 — iOS/안드로이드 권장 44px 에 맞춘다.
+   가상 기기 테스트(iPhone SE/15 Pro, Galaxy S24/Z Fold)에서 31~36px 로 잡히던 항목들. */
+@media (max-width: 720px) {
+  .swap-btn { width: 44px; height: 44px; }
+  .depart-controls select,
+  .depart-controls input[type="time"] { min-height: 44px; }
+  .map-search-route { min-height: 44px; }
+  .small-btn.icon-only { width: 44px; height: 44px; }
+  .sheet-handle { padding: 14px 0 10px; }   /* 손잡이 잡기 쉽게 */
+  .links-refresh { min-height: 44px; padding-inline: 14px; }
+  .copy-btn { min-height: 44px; padding-inline: 12px; }
+  .install-go { min-height: 44px; }
+  .install-close { width: 44px; height: 44px; }
+  /* 푸터 텍스트 링크는 글자 크기를 키우지 않고 눌리는 영역만 넓힌다. */
+  .contact-line a, .visitor-note a, .policy-link { display: inline-block; padding: 12px 4px; }
+}

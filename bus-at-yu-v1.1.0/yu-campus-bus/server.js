@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const transitApi = require('./transit-api');
+const { execFile } = require('child_process');
 
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = __dirname;
@@ -30,10 +31,20 @@ const ROUTE_PATHS_FILE = path.join(DATA_DIR, 'route-paths.json');
 const ROUTE_TIMINGS_FILE = path.join(DATA_DIR, 'route-timings.json');
 const VISITOR_STATS_FILE = path.join(DATA_DIR, 'visitor-stats.json');
 const METRICS_FILE = path.join(DATA_DIR, 'metrics.json');
+const AD_LAYOUT_FILE = path.join(DATA_DIR, 'ad-layout.json');
+const FEED_SOURCES_FILE = path.join(DATA_DIR, 'feed-sources.json');
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const TELEMETRY_TTL_MS = 120_000;
 const CROWD_TTL_MS = 30 * 60_000;
 const MAX_BODY = 16 * 1024;
 const MAX_EDITOR_BODY = 2 * 1024 * 1024;
+const MAX_UPLOAD_BODY = 6 * 1024 * 1024;   // base64 로 감싸면 원본보다 약 33% 커진다
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const AD_SLOTS = new Set(['mainBottom', 'launch', 'picksFeed', 'picksFooter']);
+const AD_EVENT_TYPES = new Set(['impression', 'click']);
+const UPLOAD_TYPES = new Map([
+  ['image/png', '.png'], ['image/jpeg', '.jpg'], ['image/webp', '.webp'], ['image/gif', '.gif']
+]);
 const CAMPUS = { minLat: 35.8200, maxLat: 35.8420, minLng: 128.7460, maxLng: 128.7680 };
 const ROUTES = new Set(['r1', 'r2']);
 const CROWD_LEVELS = new Set(['quiet', 'normal', 'crowded', 'full']);
@@ -62,6 +73,7 @@ if (!fs.existsSync(PM_ZONES_FILE)) fs.writeFileSync(PM_ZONES_FILE, '[]\n');
 if (!fs.existsSync(ROUTE_PATHS_FILE)) fs.writeFileSync(ROUTE_PATHS_FILE, '{\n  "version": 1,\n  "updatedAt": null,\n  "routes": {}\n}\n');
 if (!fs.existsSync(METRICS_FILE)) fs.writeFileSync(METRICS_FILE, '{\n  \"days\": {},\n  \"months\": {}\n}\n');
 if (!fs.existsSync(VISITOR_STATS_FILE)) fs.writeFileSync(VISITOR_STATS_FILE, '{\n  "days": {},\n  "months": {}\n}\n');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 let visitorStats = loadVisitorStats();
 let metrics = loadMetrics();
@@ -74,6 +86,8 @@ const mime = {
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.ico': 'image/x-icon',
@@ -162,6 +176,60 @@ function positiveIntegerList(value) {
   return String(value || '').split(',').map(part => positiveInteger(part.trim())).filter(Boolean).slice(0, 20);
 }
 
+const DEFAULT_AD_LAYOUT = {
+  version: 1,
+  updatedAt: null,
+  feedBannerLimit: 20,   // Picks 피드에 띄울 배너 총 개수(콘텐츠 + 광고)
+  contentsPerAd: 4,      // 콘텐츠 몇 개마다 광고 슬롯을 넣을지
+  slots: {
+    mainBottom: { enabled: true },
+    launch: { enabled: true },
+    picksFeed: { enabled: true },
+    picksFooter: { enabled: true }
+  }
+};
+
+function loadAdLayout() {
+  const raw = readJsonFile(AD_LAYOUT_FILE, {});
+  const slots = {};
+  for (const name of AD_SLOTS) {
+    slots[name] = { enabled: raw?.slots?.[name]?.enabled !== false };
+  }
+  return {
+    version: 1,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+    feedBannerLimit: clampInt(raw.feedBannerLimit, 4, 60, DEFAULT_AD_LAYOUT.feedBannerLimit),
+    contentsPerAd: clampInt(raw.contentsPerAd, 1, 20, DEFAULT_AD_LAYOUT.contentsPerAd),
+    slots
+  };
+}
+
+function clampInt(value, min, max, fallback) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function persistAdLayout(input) {
+  const current = loadAdLayout();
+  const slots = {};
+  for (const name of AD_SLOTS) {
+    const incoming = input?.slots?.[name];
+    slots[name] = { enabled: incoming ? incoming.enabled !== false : current.slots[name].enabled };
+  }
+  const next = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    feedBannerLimit: clampInt(input?.feedBannerLimit, 4, 60, current.feedBannerLimit),
+    contentsPerAd: clampInt(input?.contentsPerAd, 1, 20, current.contentsPerAd),
+    slots
+  };
+  const temp = AD_LAYOUT_FILE + '.tmp';
+  fs.writeFileSync(temp, JSON.stringify(next, null, 2) + '\n');
+  fs.renameSync(temp, AD_LAYOUT_FILE);
+  return next;
+}
+
 function publicAdConfig() {
   const requestedProvider = String(process.env.CAMBUS_AD_PROVIDER || 'demo').toLowerCase();
   const provider = AD_PROVIDERS.has(requestedProvider) ? requestedProvider : 'demo';
@@ -172,7 +240,8 @@ function publicAdConfig() {
     feedPlacementIds: positiveIntegerList(process.env.CAMBUS_AD_FEED_PLACEMENT_IDS),
     useEzoicAnchor: String(process.env.CAMBUS_AD_USE_ANCHOR || 'true').toLowerCase() !== 'false',
     bannerHeight: Math.max(48, Math.min(120, Number(process.env.CAMBUS_AD_BANNER_HEIGHT) || 58)),
-    networkScriptsReady: String(process.env.CAMBUS_EZOIC_HEADER_READY || '').toLowerCase() === 'true'
+    networkScriptsReady: String(process.env.CAMBUS_EZOIC_HEADER_READY || '').toLowerCase() === 'true',
+    layout: loadAdLayout()
   };
 }
 
@@ -256,6 +325,27 @@ function loadRouteStops() {
 function loopbackRequest(req) {
   const address = String(req.socket.remoteAddress || '').toLowerCase();
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+// 리버스 프록시 뒤에서는 remoteAddress 가 프록시 주소라 루프백 검사만으로는 안전하지 않다.
+// CAMBUS_ADMIN_TOKEN 이 설정돼 있으면 그 토큰만 쓰기를 허용한다.
+// 토큰이 없으면(로컬 개발) 기존처럼 루프백만 허용한다.
+function adminAuthorized(req) {
+  const expected = process.env.CAMBUS_ADMIN_TOKEN || '';
+  if (!expected) return loopbackRequest(req);
+  const header = String(req.headers['authorization'] || '');
+  const provided = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  // 길이가 다르면 timingSafeEqual 이 예외를 던지므로 먼저 거른다.
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function requireAdmin(req, res) {
+  if (adminAuthorized(req)) return true;
+  json(res, 401, { error: 'admin_auth_required' });
+  return false;
 }
 
 function validatedRouteStops(input) {
@@ -517,6 +607,186 @@ function recordMetric(type, payload = {}) {
   return true;
 }
 
+// 광고 지표는 events 와 섞지 않고 ads 버킷에 광고 ID 별로 쌓는다.
+// (광고주에게 "이 배너가 몇 번 보였고 몇 번 눌렸다"를 그대로 보여주기 위함)
+function recordAdEvent(adId, slot, type) {
+  if (!AD_EVENT_TYPES.has(type)) return false;
+  const id = String(adId || '').slice(0, 80) || 'unknown';
+  const slotName = AD_SLOTS.has(slot) ? slot : 'unknown';
+  const { day, month } = koreaDateKeys();
+  for (const [bucketName, key] of [['days', day], ['months', month]]) {
+    const bucket = metrics[bucketName];
+    if (!bucket[key] || typeof bucket[key] !== 'object') bucket[key] = { events: {}, destinations: {}, feedClicks: {} };
+    const row = bucket[key];
+    if (!row.ads || typeof row.ads !== 'object') row.ads = {};
+    if (!row.ads[id]) row.ads[id] = { impressions: 0, clicks: 0, slots: {} };
+    const entry = row.ads[id];
+    entry[type === 'click' ? 'clicks' : 'impressions'] += 1;
+    entry.slots[slotName] = (Number(entry.slots[slotName]) || 0) + 1;
+  }
+  persistMetrics();
+  return true;
+}
+
+function adReport(fromDay, toDay, onlyId) {
+  const days = Object.keys(metrics.days || {})
+    .filter(d => (!fromDay || d >= fromDay) && (!toDay || d <= toDay))
+    .sort();
+  const totals = {};
+  const daily = [];
+  for (const day of days) {
+    const ads = metrics.days[day]?.ads || {};
+    const row = { day, ads: {} };
+    for (const [id, entry] of Object.entries(ads)) {
+      if (onlyId && id !== onlyId) continue;
+      row.ads[id] = { impressions: Number(entry.impressions) || 0, clicks: Number(entry.clicks) || 0 };
+      if (!totals[id]) totals[id] = { impressions: 0, clicks: 0 };
+      totals[id].impressions += row.ads[id].impressions;
+      totals[id].clicks += row.ads[id].clicks;
+    }
+    if (Object.keys(row.ads).length) daily.push(row);
+  }
+  for (const entry of Object.values(totals)) {
+    entry.ctr = entry.impressions > 0 ? Number((entry.clicks / entry.impressions * 100).toFixed(2)) : 0;
+  }
+  return { from: fromDay || null, to: toDay || null, totals, daily };
+}
+
+// 관리자 화면에서 저장하는 지역 배너 목록. 공개 조회(activeLocalAds)와 달리
+// 기간이 지난 것과 꺼둔 것도 그대로 돌려준다.
+function persistLocalAds(input) {
+  const list = Array.isArray(input) ? input : [];
+  const cleaned = list.slice(0, 60).map((ad, index) => ({
+    id: String(ad?.id || `local-${Date.now()}-${index}`).slice(0, 80),
+    kind: String(ad?.kind || 'local').slice(0, 20),
+    title: String(ad?.title || '').slice(0, 100),
+    subtitle: String(ad?.subtitle || '').slice(0, 180),
+    cta: String(ad?.cta || '자세히').slice(0, 40),
+    url: typeof ad?.url === 'string' ? ad.url.slice(0, 500) : '',
+    image: typeof ad?.image === 'string' && ad.image ? ad.image.slice(0, 300) : null,
+    startsAt: typeof ad?.startsAt === 'string' && ad.startsAt ? ad.startsAt.slice(0, 35) : null,
+    endsAt: typeof ad?.endsAt === 'string' && ad.endsAt ? ad.endsAt.slice(0, 35) : null,
+    order: clampInt(ad?.order, 0, 9999, index + 1),
+    weight: clampInt(ad?.weight, 1, 100, 1),
+    enabled: ad?.enabled !== false
+  })).filter(ad => ad.title && ad.url);
+  cleaned.sort((a, b) => a.order - b.order);
+  const temp = LOCAL_ADS_FILE + '.tmp';
+  fs.writeFileSync(temp, JSON.stringify(cleaned, null, 2) + '\n');
+  fs.renameSync(temp, LOCAL_ADS_FILE);
+  return cleaned;
+}
+
+// 의존성 없이 처리하려고 multipart 대신 data URL(base64)로 받는다.
+function saveUploadedImage(dataUrl) {
+  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+  if (!match) throw Object.assign(new Error('invalid_data_url'), { status: 400 });
+  const ext = UPLOAD_TYPES.get(match[1].toLowerCase());
+  if (!ext) throw Object.assign(new Error('unsupported_image_type'), { status: 415 });
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) {
+    throw Object.assign(new Error('image_too_large'), { status: 413 });
+  }
+  const name = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, name), buffer);
+  return { url: `/uploads/${name}`, bytes: buffer.length };
+}
+
+// Picks 수동 항목(기획 배너 포함). 공개 목록과 달리 꺼둔 것·기간 지난 것도 그대로 준다.
+function persistPortalFeed(input) {
+  const list = Array.isArray(input) ? input : [];
+  const cleaned = list.slice(0, 200).map((item, index) => ({
+    id: String(item?.id || `manual-${Date.now()}-${index}`).slice(0, 80),
+    type: String(item?.type || 'utility').slice(0, 30),
+    badge: String(item?.badge || '정보').slice(0, 20),
+    icon: String(item?.icon || '↗').slice(0, 32),
+    title: String(item?.title || '').slice(0, 90),
+    summary: String(item?.summary || '').slice(0, 260),
+    url: typeof item?.url === 'string' ? item.url.slice(0, 500) : '',
+    source: String(item?.source || '').slice(0, 100),
+    publishedAt: String(item?.publishedAt || '').slice(0, 20),
+    startsAt: item?.startsAt ? String(item.startsAt).slice(0, 35) : undefined,
+    endsAt: item?.endsAt ? String(item.endsAt).slice(0, 35) : undefined,
+    order: clampInt(item?.order, 0, 99999, (index + 1) * 10),
+    pinned: item?.pinned === true,
+    enabled: item?.enabled !== false
+  })).filter(item => item.title && safeHttpUrl(item.url));
+  cleaned.sort((a, b) => a.order - b.order);
+  const temp = PORTAL_FEED_FILE + '.tmp';
+  fs.writeFileSync(temp, JSON.stringify(cleaned, null, 2) + '\n');
+  fs.renameSync(temp, PORTAL_FEED_FILE);
+  return cleaned;
+}
+
+function persistFeedSources(input) {
+  const list = Array.isArray(input) ? input : [];
+  const cleaned = list.slice(0, 20).map((src, index) => ({
+    id: String(src?.id || `source-${index + 1}`).slice(0, 40),
+    url: typeof src?.url === 'string' ? src.url.slice(0, 400) : '',
+    baseUrl: typeof src?.baseUrl === 'string' ? src.baseUrl.slice(0, 200) : '',
+    type: String(src?.type || 'news').slice(0, 20),
+    badge: String(src?.badge || '영대소식').slice(0, 20),
+    icon: String(src?.icon || '📢').slice(0, 32),
+    source: String(src?.source || '영남대학교').slice(0, 60),
+    pages: clampInt(src?.pages, 1, 10, 2),
+    pageSize: clampInt(src?.pageSize, 1, 100, 10),
+    limit: clampInt(src?.limit, 1, 60, 12),
+    enabled: src?.enabled !== false
+  })).filter(src => safeHttpUrl(src.url));
+  const temp = FEED_SOURCES_FILE + '.tmp';
+  fs.writeFileSync(temp, JSON.stringify(cleaned, null, 2) + '\n');
+  fs.renameSync(temp, FEED_SOURCES_FILE);
+  return cleaned;
+}
+
+let refreshRunning = false;
+// 관리자 화면의 "지금 수집" 버튼. 수집기는 독립 스크립트라 자식 프로세스로 돌린다.
+function runFeedRefresh() {
+  if (refreshRunning) return Promise.resolve({ ok: false, error: 'already_running' });
+  refreshRunning = true;
+  return new Promise(resolve => {
+    execFile(process.execPath, [path.join(ROOT, 'scripts', 'refresh-yu-feed.js')], {
+      cwd: ROOT,
+      env: { ...process.env, CAMBUS_DATA_DIR: DATA_DIR },
+      timeout: 90_000,
+      maxBuffer: 512 * 1024
+    }, (error, stdout, stderr) => {
+      refreshRunning = false;
+      const log = String(stdout || '').trim() + (stderr ? '\n' + String(stderr).trim() : '');
+      resolve({ ok: !error, log: log.slice(-4000), error: error ? (error.message || 'refresh_failed') : null });
+    });
+  });
+}
+
+function adminOverview() {
+  const { day, month } = koreaDateKeys();
+  const visitors = visitorCounts();
+  const todayAds = metrics.days?.[day]?.ads || {};
+  let impressions = 0, clicks = 0;
+  for (const entry of Object.values(todayAds)) {
+    impressions += Number(entry.impressions) || 0;
+    clicks += Number(entry.clicks) || 0;
+  }
+  const manual = readJsonFile(PORTAL_FEED_FILE, []);
+  const auto = readJsonFile(PORTAL_AUTO_FILE, []);
+  const stops = loadRouteStops();
+  return {
+    day, month,
+    visitors,
+    events: { day: metrics.days?.[day]?.events || {}, month: metrics.months?.[month]?.events || {} },
+    ads: { impressions, clicks, ctr: impressions ? Number((clicks / impressions * 100).toFixed(2)) : 0 },
+    feed: {
+      manual: Array.isArray(manual) ? manual.length : 0,
+      pinned: Array.isArray(manual) ? manual.filter(x => x?.pinned).length : 0,
+      auto: Array.isArray(auto) ? auto.length : 0,
+      autoUpdatedAt: Array.isArray(auto) && auto.length ? (auto[0]?.publishedAt || null) : null
+    },
+    routes: Object.fromEntries(Object.entries(stops.routes || {}).map(([id, r]) => [id, (r.stops || []).length])),
+    adProvider: publicAdConfig().provider,
+    dataDir: DATA_DIR
+  };
+}
+
 function loadVisitorStats() {
   try {
     const parsed = JSON.parse(fs.readFileSync(VISITOR_STATS_FILE, 'utf8'));
@@ -661,8 +931,86 @@ async function api(req, res, pathname) {
     return json(res, 202, { ok: true });
   }
 
+  if (req.method === 'POST' && pathname === '/api/ad-event') {
+    const body = await readJson(req);
+    if (!AD_EVENT_TYPES.has(body.type)) return json(res, 400, { error: 'invalid_ad_event' });
+    recordAdEvent(body.adId, body.slot, body.type);
+    return json(res, 202, { ok: true });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/ad-report') {
+    if (!requireAdmin(req, res)) return;
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    return json(res, 200, adReport(params.get('from') || '', params.get('to') || '', params.get('id') || ''));
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/session') {
+    if (!requireAdmin(req, res)) return;
+    return json(res, 200, { ok: true, tokenRequired: Boolean(process.env.CAMBUS_ADMIN_TOKEN) });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/overview') {
+    if (!requireAdmin(req, res)) return;
+    return json(res, 200, adminOverview());
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/portal-feed') {
+    if (!requireAdmin(req, res)) return;
+    const parsed = readJsonFile(PORTAL_FEED_FILE, []);
+    return json(res, 200, { items: Array.isArray(parsed) ? parsed : [] });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/portal-feed') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readJson(req, MAX_EDITOR_BODY);
+    return json(res, 200, { ok: true, items: persistPortalFeed(body.items) });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/feed-sources') {
+    if (!requireAdmin(req, res)) return;
+    const parsed = readJsonFile(FEED_SOURCES_FILE, []);
+    return json(res, 200, { sources: Array.isArray(parsed) ? parsed : [] });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/feed-sources') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readJson(req, MAX_EDITOR_BODY);
+    return json(res, 200, { ok: true, sources: persistFeedSources(body.sources) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/refresh-feed') {
+    if (!requireAdmin(req, res)) return;
+    const out = await runFeedRefresh();
+    const auto = readJsonFile(PORTAL_AUTO_FILE, []);
+    return json(res, out.ok ? 200 : 409, { ...out, collected: Array.isArray(auto) ? auto.length : 0 });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/local-ads') {
+    if (!requireAdmin(req, res)) return;
+    const parsed = readJsonFile(LOCAL_ADS_FILE, []);
+    return json(res, 200, { ads: Array.isArray(parsed) ? parsed : [] });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/local-ads') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readJson(req, MAX_EDITOR_BODY);
+    return json(res, 200, { ok: true, ads: persistLocalAds(body.ads) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/ad-layout') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readJson(req);
+    return json(res, 200, { ok: true, layout: persistAdLayout(body) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/upload') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readJson(req, MAX_UPLOAD_BODY);
+    return json(res, 200, { ok: true, ...saveUploadedImage(body.dataUrl) });
+  }
+
   if (req.method === 'POST' && pathname === '/api/route-stops') {
-    if (!loopbackRequest(req)) return json(res, 403, { error: 'route_editor_local_only' });
+    if (!requireAdmin(req, res)) return;
     const body = await readJson(req);
     const saved = validatedRouteStops(body);
     persistRouteStops(saved);
@@ -670,14 +1018,14 @@ async function api(req, res, pathname) {
   }
 
   if (req.method === 'POST' && pathname === '/api/route-paths') {
-    if (!loopbackRequest(req)) return json(res, 403, { error: 'route_editor_local_only' });
+    if (!requireAdmin(req, res)) return;
     const saved = validatedRoutePaths(await readJson(req, MAX_EDITOR_BODY));
     persistRoutePaths(saved);
     return json(res, 200, { ok: true, updatedAt: saved.updatedAt, routes: saved.routes });
   }
 
   if (req.method === 'POST' && pathname === '/api/route-timings') {
-    if (!loopbackRequest(req)) return json(res, 403, { error: 'route_editor_local_only' });
+    if (!requireAdmin(req, res)) return;
     const saved = validatedRouteTimings(await readJson(req));
     persistRouteTimings(saved);
     return json(res, 200, { ok: true, updatedAt: saved.updatedAt, routes: saved.routes });
@@ -737,6 +1085,23 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+function serveUpload(req, res, pathname) {
+  let rel;
+  try { rel = decodeURIComponent(pathname.slice('/uploads/'.length)); } catch { return json(res, 400, { error: 'bad_path' }); }
+  // 경로 조작으로 볼륨 밖 파일을 읽지 못하게 파일명만 허용한다.
+  if (!rel || rel !== path.basename(rel)) return json(res, 403, { error: 'forbidden' });
+  const file = path.join(UPLOAD_DIR, rel);
+  fs.stat(file, (err, stat) => {
+    if (err || !stat.isFile()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Not found');
+    }
+    const type = mime[path.extname(file).toLowerCase()] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' });
+    fs.createReadStream(file).pipe(res);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   setSecurityHeaders(res);
@@ -749,6 +1114,8 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url.pathname);
+    // 업로드 배너는 프로젝트가 아니라 데이터 볼륨에 있으므로 따로 내보낸다.
+    if (url.pathname.startsWith('/uploads/')) return serveUpload(req, res, url.pathname);
     return serveStatic(req, res, url.pathname);
   } catch (e) {
     console.error(e);

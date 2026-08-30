@@ -141,8 +141,90 @@
     });
   }
 
+  /** 관리자 화면에서 끈 위치는 아예 감춘다. */
+  function applySlotVisibility() {
+    const slots = cfg.layout?.slots || {};
+    const map = {
+      mainBottom: document.getElementById('bottomAd'),
+      launch: document.getElementById('launchAd'),
+      picksFooter: document.getElementById('linksAd')
+    };
+    for (const [name, el] of Object.entries(map)) {
+      if (el && slots[name] && slots[name].enabled === false) el.hidden = true;
+    }
+    if (slots.mainBottom && slots.mainBottom.enabled === false) setBannerHeight(0);
+  }
+
+  // ---- 노출/클릭 집계 ----
+  // 화면에 절반 이상이 1초 넘게 보였을 때만 노출 1회로 센다.
+  // 스크롤로 스쳐 지나간 것까지 세면 광고주에게 줄 숫자가 부풀려진다.
+  const VIEWABLE_RATIO = 0.5;
+  const VIEWABLE_MS = 1000;
+  const counted = new WeakSet();
+  const pending = new WeakMap();
+
+  function sendAdEvent(adId, slot, type) {
+    const body = JSON.stringify({ adId, slot, type });
+    try {
+      if (type === 'click' && navigator.sendBeacon) {
+        navigator.sendBeacon('/api/ad-event', new Blob([body], { type: 'application/json' }));
+        return;
+      }
+    } catch { /* 아래 fetch 로 넘어간다 */ }
+    fetch('/api/ad-event', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true
+    }).catch(() => {});
+  }
+
+  let observer = null;
+  function viewObserver() {
+    if (observer || typeof IntersectionObserver !== 'function') return observer;
+    observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        const el = entry.target;
+        if (entry.isIntersecting && entry.intersectionRatio >= VIEWABLE_RATIO) {
+          if (counted.has(el) || pending.has(el)) continue;
+          pending.set(el, setTimeout(() => {
+            pending.delete(el);
+            if (counted.has(el)) return;
+            counted.add(el);
+            observer.unobserve(el);
+            sendAdEvent(el.dataset.adId || 'unknown', el.dataset.adSlot || 'unknown', 'impression');
+          }, VIEWABLE_MS));
+        } else if (pending.has(el)) {
+          clearTimeout(pending.get(el));
+          pending.delete(el);
+        }
+      }
+    }, { threshold: [VIEWABLE_RATIO] });
+    return observer;
+  }
+
+  /** 광고를 담은 요소를 집계 대상으로 등록한다. */
+  function trackAd(el, adId, slot) {
+    if (!el) return;
+    el.dataset.adId = adId || 'unknown';
+    el.dataset.adSlot = slot || 'unknown';
+    viewObserver()?.observe(el);
+  }
+
+  document.addEventListener('click', event => {
+    const el = event.target.closest?.('[data-ad-id]');
+    if (!el) return;
+    sendAdEvent(el.dataset.adId, el.dataset.adSlot || 'unknown', 'click');
+  }, true);
+
+  function trackStaticSlots() {
+    const slots = cfg.layout?.slots || {};
+    if (slots.mainBottom?.enabled !== false) trackAd(document.getElementById('bottomAd'), 'slot:mainBottom', 'mainBottom');
+    if (slots.launch?.enabled !== false) trackAd(document.getElementById('launchAd'), 'slot:launch', 'launch');
+    if (slots.picksFooter?.enabled !== false) trackAd(document.getElementById('linksAd'), 'slot:picksFooter', 'picksFooter');
+  }
+
   function init() {
     setBannerHeight(cfg.provider === 'none' ? 0 : cfg.bannerHeight);
+    applySlotVisibility();
+    trackStaticSlots();
 
     const launch = document.getElementById('launchAd');
     const close = document.getElementById('closeLaunchAd');
@@ -202,6 +284,6 @@
     }
   }
 
-  window.YUAds = { config: cfg, init, dismissLaunchAd, attachFeedAds, loadRemoteConfig };
+  window.YUAds = { config: cfg, init, dismissLaunchAd, attachFeedAds, loadRemoteConfig, trackAd };
   bootstrap();
 })();

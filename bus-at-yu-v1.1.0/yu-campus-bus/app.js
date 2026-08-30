@@ -13,9 +13,11 @@ const DWELL_SECONDS = 5 * 60;
 // 정류장에 일괄 적용합니다. 25인승 셔틀에서 문 열고 몇 명 타고 내리는 데 걸리는 현실적인
 // 값으로 15초를 기본값으로 두었고, 실측이 들어오면 route-timings.json 쪽에서 보정합니다.
 const BOARDING_SECONDS = 15;
-// 직선거리 기반 예비 점수 상위 몇 개까지 실제 보행 경로를 확인할지. 예비 점수는 직선거리로
-// 도보 시간을 과소평가하므로 1개만 믿으면 순위가 뒤집힙니다. 보행 경로는 캐시됩니다.
-const BUS_CANDIDATES_TO_VERIFY = 5;
+// 직선거리 기반 예비 점수 상위 몇 개까지 실제 보행 경로를 확인할지.
+// 공개 보행 라우팅 서버는 동시 요청이 많으면 응답을 막습니다. 순위 결정은 기기에서
+// 직선거리로 끝내고, 네트워크는 최종 후보에만 씁니다.
+const BUS_CANDIDATES_TO_VERIFY = 2;
+const TRANSFER_CANDIDATES_TO_VERIFY = 2;
 const BOARD_NEAR_METERS = 220;
 const BOARD_AT_STOP_METERS = 70;
 const ALIGHT_SOON_METERS = 240;
@@ -88,8 +90,8 @@ const stop = (id, name, code, aliases, coord, note = '', dwell = 0, guide = '') 
 const ROUTES = {
   r1: {
     id: 'r1',
-    name: '1노선 (인문계)',
-    short: '1노선',
+    name: '셔틀1 (인문계)',
+    short: '셔틀1',
     color: '#e63946',
     guideImage: 'route-guide-r1.png',
     guideNote: '사용자가 보내준 손그림 경로 이미지 기준으로 정차 위치를 수동 보정했습니다.',
@@ -109,8 +111,8 @@ const ROUTES = {
   },
   r2: {
     id: 'r2',
-    name: '2노선 (자연계)',
-    short: '2노선',
+    name: '셔틀2 (자연계)',
+    short: '셔틀2',
     color: '#3478f6',
     guideImage: 'route-guide-r2.png',
     guideNote: '현재 공식 정류장 체계를 유지하되, 정차 위치는 손그림 이미지와 설명을 참고해 보정했습니다.',
@@ -192,7 +194,8 @@ const state = {
   departureAt: null,
   drawnRouteGeometry: {},
   subway: null,
-  cityBusEnabled: false
+  cityBusEnabled: false,
+  walkRefineToken: 0
 };
 
 // null departureAt means "지금 출발" — planRoutes()/후속 계산은 이 값을 기준 시각으로 사용합니다.
@@ -545,7 +548,7 @@ function buildSavedRouteModel(route) {
   };
 }
 
-// 1노선·2노선이 둘 다 보일 때만 겹치는 구간을 좌우로 살짝 벌립니다. 버스 점도 같은 오프셋을
+// 셔틀1·셔틀2가 둘 다 보일 때만 겹치는 구간을 좌우로 살짝 벌립니다. 버스 점도 같은 오프셋을
 // 써야 지도 위에서 그려진 선과 어긋나 보이지 않습니다 (predictedPoint()에서 재사용).
 function routeOffsetPixels(routeId) {
   const bothRoutesVisible = state.layerVisibility.route1 && state.layerVisibility.route2 &&
@@ -1211,21 +1214,47 @@ function setDestination(coord, name = '지도에서 선택한 위치') {
 }
 
 const footCache = new Map();
+// 공개 보행 라우팅 서버(routing.openstreetmap.de)는 동시 요청을 몰아치면 막습니다.
+// 한 번에 3건까지만 보내도록 큐를 둡니다.
+const FOOT_CONCURRENCY = 3;
+let footActive = 0;
+const footQueue = [];
+function footSlot() {
+  if (footActive < FOOT_CONCURRENCY) { footActive += 1; return Promise.resolve(); }
+  return new Promise(resolve => footQueue.push(resolve));
+}
+function footRelease() {
+  const next = footQueue.shift();
+  if (next) next(); else footActive -= 1;
+}
 const WALK_FALLBACK_MPS = 1.2;
+// 캠퍼스처럼 길이 촘촘한 곳에서는 직선거리에 굽은 길 보정을 곱한 값이 실제 도보와 큰 차이가
+// 없습니다. 경로 후보를 고르는 계산은 전부 기기에서 이 값으로 끝내고, 외부 보행 라우팅은
+// 최종 선택된 경로의 선을 그릴 때만 씁니다(공개 서버가 느리고 자주 막힙니다).
+const WALK_DETOUR_FACTOR = 1.3;
 
 // 보행 라우팅 서버가 응답하지 않아도 결과가 아예 사라지지 않도록, 직선거리 기준 추정치로
 // 대체합니다. approx:true인 구간은 화면에 "직선거리 추정"으로 표시합니다.
 function fallbackWalk(a, b) {
-  const distance = haversine(a, b);
+  const distance = haversine(a, b) * WALK_DETOUR_FACTOR;
   return { ok: true, approx: true, duration: distance / WALK_FALLBACK_MPS, distance, geometry: [a, b] };
+}
+
+/** 경로 계획용 도보 추정. 네트워크를 쓰지 않아 즉시 끝납니다. */
+function walkEstimate(a, b) {
+  const key = `${a.map(x => x.toFixed(5)).join(',')}|${b.map(x => x.toFixed(5)).join(',')}`;
+  const cached = footCache.get(key);
+  if (cached && !cached.approx) return cached;   // 이미 실제 경로를 받아둔 구간이면 그걸 씁니다
+  return fallbackWalk(a, b);
 }
 
 async function footRoute(a, b) {
   const key = `${a.map(x => x.toFixed(5)).join(',')}|${b.map(x => x.toFixed(5)).join(',')}`;
   if (footCache.has(key)) return footCache.get(key);
   const url = `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson&steps=false`;
+  await footSlot();
   try {
-    const res = await fetchWithTimeout(url, {}, 7000);
+    const res = await fetchWithTimeout(url, {}, 5000);
     const data = await res.json();
     if (!res.ok || data.code !== 'Ok' || !data.routes?.[0]) throw new Error(data.message || data.code);
     const r = data.routes[0];
@@ -1237,6 +1266,8 @@ async function footRoute(a, b) {
     const out = fallbackWalk(a, b);
     footCache.set(key, out);
     return out;
+  } finally {
+    footRelease();
   }
 }
 
@@ -1312,8 +1343,8 @@ async function buildTransferPlan(station, first, second) {
   }
   if (!best) return null;
 
-  const walkIn = await footRoute(state.user, best.b.s.coord);
-  const walkOut = await footRoute(best.a.s.coord, state.destination);
+  const walkIn = walkEstimate(state.user, best.b.s.coord);
+  const walkOut = walkEstimate(best.a.s.coord, state.destination);
   if (!walkIn.ok || !walkOut.ok) return null;
 
   const boardNext = nextArrivalAtStop(first.routeId, best.b.i, effectiveNow());
@@ -1379,16 +1410,18 @@ async function buildOffCampusPlan() {
   )[0];
   if (!gateway) return null;
 
+  const rides = boardCandidates
+    .filter(b => b.name !== CAMPUS_GATEWAY_STATION)
+    .map(b => ({ boardStation: b, ride: state.subway.findRoute(b.name, CAMPUS_GATEWAY_STATION) }))
+    .filter(x => x.ride);
+  const walks = rides.map(x => walkEstimate(state.user, x.boardStation.coord));
   let best = null;
-  for (const boardStation of boardCandidates) {
-    if (boardStation.name === CAMPUS_GATEWAY_STATION) continue;
-    const ride = state.subway.findRoute(boardStation.name, CAMPUS_GATEWAY_STATION);
-    if (!ride) continue;
-    const walkIn = await footRoute(state.user, boardStation.coord);
-    if (!walkIn.ok) continue;
-    const total = walkIn.duration + ride.seconds;
-    if (!best || total < best.total) best = { boardStation, ride, walkIn, total };
-  }
+  rides.forEach((x, i) => {
+    const walkIn = walks[i];
+    if (!walkIn.ok) return;
+    const total = walkIn.duration + x.ride.seconds;
+    if (!best || total < best.total) best = { ...x, walkIn, total };
+  });
   if (!best) return null;
 
   // 영남대역에서 목적지까지: 도보와 교내버스 중 빠른 쪽
@@ -1469,15 +1502,14 @@ async function buildCityBusPlan() {
   }
   if (!candidates.length) return null;
 
-  let best = null;
-  for (const candidate of candidates.slice(0, 3)) {
-    const walkIn = await footRoute(state.user, candidate.board.coord);
-    if (!walkIn.ok) continue;
+  const evaluated = await Promise.all(candidates.slice(0, 3).map(async candidate => {
+    const walkIn = walkEstimate(state.user, candidate.board.coord);
     const lastLeg = await campusLegFrom(candidate.alight.coord, state.destination);
-    if (!lastLeg) continue;
-    const total = walkIn.duration + candidate.rideSeconds + lastLeg.seconds;
-    if (!best || total < best.total) best = { candidate, walkIn, lastLeg, total };
-  }
+    if (!walkIn.ok || !lastLeg) return null;
+    return { candidate, walkIn, lastLeg, total: walkIn.duration + candidate.rideSeconds + lastLeg.seconds };
+  }));
+  let best = null;
+  for (const row of evaluated) if (row && (!best || row.total < best.total)) best = row;
   if (!best) return null;
 
   const { candidate, walkIn, lastLeg } = best;
@@ -1504,11 +1536,12 @@ async function buildCityBusPlan() {
 
 /** 영남대역 등 캠퍼스 관문에서 목적지까지 — 도보와 교내버스 중 빠른 쪽을 고릅니다. */
 async function campusLegFrom(fromCoord, destination) {
-  const walk = await footRoute(fromCoord, destination);
+  const walk = walkEstimate(fromCoord, destination);
   let best = walk.ok
     ? { seconds: walk.duration, walkDistance: walk.distance, kind: 'walk', steps: [`목적지까지 도보 ${mToText(walk.distance)}`] }
     : null;
 
+  // 교내 구간은 네트워크 호출이 없어 그대로 순회해도 빠릅니다.
   for (const routeId of ['r1', 'r2']) {
     const route = ROUTES[routeId], model = state.routeModels[routeId];
     if (!model?.ok) continue;
@@ -1570,14 +1603,15 @@ async function planRoutes() {
   clearPlanLayers();
 
   let plans = [];
-  const direct = await footRoute(state.user, state.destination);
+  const direct = walkEstimate(state.user, state.destination);
   if (direct.ok) {
     plans.push({ type: 'walk', duration: direct.duration, distance: direct.distance, geometry: direct.geometry, title: '도보', steps: [`도보 ${mToText(direct.distance)}`] });
   }
 
-  for (const routeId of ['r1', 'r2']) {
+  // 두 노선은 서로 독립이라 함께 계산합니다(각 노선이 보행 경로를 여러 번 부릅니다).
+  const routeJobs = ['r1', 'r2'].map(async routeId => {
     const route = ROUTES[routeId], model = state.routeModels[routeId];
-    if (!model?.ok) continue;
+    if (!model?.ok) return null;
 
     // 승·하차 후보를 가까운 3개로 미리 자르면, 같은 역을 두 번 서는 노선에서 정작 가까운 쪽
     // 정차가 후보에서 빠질 수 있습니다. 구간시간 계산은 네트워크 호출이 없어 값싸므로 모든
@@ -1595,14 +1629,12 @@ async function planRoutes() {
         rough.push({ bs, bi, as, ai, ride, next, score: bd / 1.2 + next.wait + ride + ad / 1.2 });
       }
     }
-    if (!rough.length) continue;
+    if (!rough.length) return null;
     rough.sort((a, b) => a.score - b.score);
 
     const verified = await Promise.all(rough.slice(0, BUS_CANDIDATES_TO_VERIFY).map(async cand => {
-      const [walkIn, walkOut] = await Promise.all([
-        footRoute(state.user, cand.bs.coord),
-        footRoute(cand.as.coord, state.destination)
-      ]);
+      const walkIn = walkEstimate(state.user, cand.bs.coord);
+      const walkOut = walkEstimate(cand.as.coord, state.destination);
       if (!walkIn.ok || !walkOut.ok) return null;
       const next = nextArrivalAtStop(routeId, cand.bi, effectiveNow());
       if (!next) return null;
@@ -1610,9 +1642,9 @@ async function planRoutes() {
     }));
     let best = null;
     for (const cand of verified) if (cand && (!best || cand.total < best.total)) best = cand;
-    if (!best) continue;
+    if (!best) return null;
 
-    plans.push({
+    return {
       type: 'bus',
       routeId,
       duration: best.total,
@@ -1635,23 +1667,37 @@ async function planRoutes() {
         `${best.as.name} 하차 · 버스 약 ${secToMin(best.ride)}분`,
         `목적지까지 도보 ${mToText(best.walkOut.distance)}`
       ]
-    });
-  }
+    };
+  });
+  for (const plan of await Promise.all(routeJobs)) if (plan) plans.push(plan);
 
   const offCampus = await buildOffCampusPlan();
   if (offCampus) plans.push(offCampus);
   const cityBus = await buildCityBusPlan();
   if (cityBus) plans.push(cityBus);
 
+  // 환승 조합은 많지만 대부분 쓸모없습니다. 어느 환승역이 유리한지는 기기에서 직선거리로
+  // 먼저 추려내고, 실제 보행 경로는 가장 그럴듯한 조합에만 씁니다(공개 라우팅 서버 부담 최소화).
+  const transferCandidates = [];
   for (const station of TRANSFER_STATIONS) {
     for (const first of station.members) {
       for (const second of station.members) {
         if (first.routeId === second.routeId) continue;
-        const plan = await buildTransferPlan(station, first, second);
-        if (plan) plans.push(plan);
+        const firstStops = ROUTES[first.routeId]?.stops || [];
+        const secondStops = ROUTES[second.routeId]?.stops || [];
+        const nearBoard = Math.min(...firstStops.map(s => haversine(state.user, s.coord)));
+        const nearAlight = Math.min(...secondStops.map(s => haversine(state.destination, s.coord)));
+        if (!Number.isFinite(nearBoard) || !Number.isFinite(nearAlight)) continue;
+        transferCandidates.push({ station, first, second, score: nearBoard + nearAlight });
       }
     }
   }
+  transferCandidates.sort((a, b) => a.score - b.score);
+  const transferPlans = await Promise.all(
+    transferCandidates.slice(0, TRANSFER_CANDIDATES_TO_VERIFY)
+      .map(c => buildTransferPlan(c.station, c.first, c.second))
+  );
+  for (const plan of transferPlans) if (plan) plans.push(plan);
 
   // 캠퍼스 밖에서 출발하면 "18km 걷기" 같은 후보가 산술적으로는 만들어집니다.
   // 아무도 택하지 않을 경로는 결과에서 빼서 카카오맵처럼 현실적인 것만 남깁니다.
@@ -1668,9 +1714,9 @@ async function planRoutes() {
   document.getElementById('routeBtn').disabled = false;
 }
 
-// 카카오맵처럼 "도보 3분 › 2노선 5분 › 도보 1분" 한 줄로 경로 구성을 먼저 보여줍니다.
+// 카카오맵처럼 "도보 3분 › 셔틀2 5분 › 도보 1분" 한 줄로 경로 구성을 먼저 보여줍니다.
 // 각 구간의 소요시간 비율대로 막대 폭을 나눠, 뭘 오래 타는지 한눈에 들어오게 합니다.
-const SUBWAY_BAR_COLOR = '#17191c';   // 지하철 = 검정
+const SUBWAY_BAR_COLOR = '#17191c';   // 노선색을 못 읽었을 때의 대체색
 const CITY_BUS_BAR_COLOR = '#8a8f96'; // 시내버스 = 회색
 
 function planSegments(plan) {
@@ -1680,7 +1726,12 @@ function planSegments(plan) {
   if (plan.type === 'offcampus') {
     const segments = [walk(plan.walkIn?.duration || 0)];
     for (const s of plan.subwayRide.segments) {
-      segments.push({ kind: 'subway', seconds: s.seconds || (plan.subwayRide.seconds / plan.subwayRide.segments.length), label: `${s.ref}호선`, color: SUBWAY_BAR_COLOR });
+      segments.push({
+        kind: 'subway',
+        seconds: s.seconds || (plan.subwayRide.seconds / plan.subwayRide.segments.length),
+        label: `${s.ref}호선`,
+        color: s.color || SUBWAY_BAR_COLOR
+      });
     }
     const leg = plan.campusLeg;
     if (leg?.kind === 'bus') {
@@ -1693,11 +1744,19 @@ function planSegments(plan) {
   }
 
   if (plan.type === 'city-bus') {
-    return [
+    const segments = [
       walk(plan.walkIn?.duration || 0),
-      { kind: 'city-bus', seconds: plan.ride || 0, label: '시내버스', color: CITY_BUS_BAR_COLOR },
-      walk(plan.walkOut?.duration || 0)
+      { kind: 'city-bus', seconds: plan.ride || 0, label: '시내버스', color: CITY_BUS_BAR_COLOR }
     ];
+    // 캠퍼스 안 마지막 구간(교내버스 또는 도보)도 요약에 넣어야 합니다.
+    const leg = plan.campusLeg;
+    if (leg?.kind === 'bus') {
+      const route = ROUTES[leg.routeId];
+      segments.push({ kind: 'bus', seconds: leg.seconds, label: route.short, color: route.color });
+    } else if (leg) {
+      segments.push(walk(leg.seconds));
+    }
+    return segments;
   }
 
   if (plan.type === 'bus-transfer') {
@@ -1759,6 +1818,8 @@ function renderPlans(plans) {
       ? `${mToText(p.distance)} · OSM 보행 경로`
       : p.type === 'offcampus'
         ? `${escapeHtml(p.subwayBoard?.name || '')}역 승차 · 영남대역 하차${p.subwayRide?.transfers ? ` · 환승 ${p.subwayRide.transfers}회` : ''}`
+      : p.type === 'city-bus'
+        ? `${escapeHtml(p.cityBoard?.name || '')} 승차 · ${escapeHtml(p.cityAlight?.name || '')} 하차`
       : p.type === 'bus-transfer'
         ? `${escapeHtml(p.board?.name || '')} 승차 · ${escapeHtml(p.transferStationName || '')} 환승 · ${p.baseDeparture} 출발편`
         : `${escapeHtml(p.board?.name || '')} 승차 · ${escapeHtml(p.alight?.name || '')} 하차 · ${p.baseDeparture} 출발편`;
@@ -1794,6 +1855,25 @@ function clearPlanLayers() {
   state.planLayers.forEach(l => map.removeLayer(l));
   state.planLayers = [];
 }
+/* 표시 중인 경로의 도보 구간만 실제 보행 경로로 교체합니다.
+ * 화면을 막지 않고, 그 사이 사용자가 다른 경로를 고르면 조용히 버립니다.
+ */
+async function refineWalkGeometry(plan, inLayer, outLayer) {
+  if (!plan.walkIn?.approx && !plan.walkOut?.approx) return;
+  const token = ++state.walkRefineToken;
+  // 추정 도보 구간의 양 끝점이 곧 승차 정류장 / 하차 정류장입니다.
+  const boardCoord = plan.walkIn.geometry.at(-1);
+  const alightCoord = plan.walkOut.geometry[0];
+  const [inRoute, outRoute] = await Promise.all([
+    footRoute(state.user, boardCoord),
+    footRoute(alightCoord, state.destination)
+  ]);
+  if (token !== state.walkRefineToken) return;              // 그 사이 다른 경로를 선택함
+  if (!map.hasLayer(inLayer) || !map.hasLayer(outLayer)) return;
+  if (inRoute.ok && !inRoute.approx) { plan.walkIn = inRoute; inLayer.setLatLngs(inRoute.geometry); }
+  if (outRoute.ok && !outRoute.approx) { plan.walkOut = outRoute; outLayer.setLatLngs(outRoute.geometry); }
+}
+
 function drawPlan(plan) {
   clearPlanLayers();
   if (plan.type === 'walk') {
@@ -1829,6 +1909,9 @@ function drawPlan(plan) {
   const a = L.polyline(plan.walkIn.geometry, { color: '#333', weight: 5, opacity: .75, dashArray: '3 8' }).addTo(map);
   const b = L.polyline(plan.walkOut.geometry, { color: '#333', weight: 5, opacity: .75, dashArray: '3 8' }).addTo(map);
   state.planLayers.push(a, b);
+  // 지금 보여주는 경로에 한해서만 실제 보행 경로를 받아 점선을 다듬습니다.
+  // 계획 자체는 이미 기기에서 끝났으므로 실패해도 결과는 그대로입니다.
+  refineWalkGeometry(plan, a, b);
 
   if (plan.type === 'bus-transfer') {
     const firstModel = state.routeModels[plan.firstRouteId], secondModel = state.routeModels[plan.secondRouteId];

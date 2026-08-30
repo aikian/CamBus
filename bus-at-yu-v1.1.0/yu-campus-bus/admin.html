@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>CamBus 관리</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      color-scheme: light;
+      --line:#e4e6e9; --muted:#767b83; --ink:#17191c; --bg:#f4f5f7;
+      --ok:#177a51; --err:#c4342f; --accent:#17191c;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink);
+      font-family:Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
+
+    /* ---------- 상단 바 ---------- */
+    .topbar { position:sticky; top:0; z-index:20; background:rgba(255,255,255,.97); border-bottom:1px solid var(--line);
+      backdrop-filter:blur(10px); }
+    .topbar-inner { width:min(1040px,100%); margin:0 auto; padding:12px 18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+    .brand { font-size:16px; font-weight:850; letter-spacing:-.3px; }
+    .brand small { display:block; font-size:11px; font-weight:600; color:var(--muted); letter-spacing:0; }
+    .tabs { display:flex; gap:4px; margin-left:auto; flex-wrap:wrap; }
+    .tab { border:0; background:transparent; padding:8px 12px; border-radius:9px; font:inherit; font-size:13px; font-weight:750;
+      color:var(--muted); cursor:pointer; }
+    .tab:hover { background:#f1f2f4; }
+    .tab.active { background:var(--accent); color:#fff; }
+    .topbar-actions { display:flex; gap:6px; align-items:center; }
+
+    main { width:min(1040px,100%); margin:0 auto; padding:20px 18px 96px; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+    section { margin-bottom:14px; padding:16px 18px; background:#fff; border:1px solid var(--line); border-radius:14px; }
+    section > h2 { margin:0 0 4px; font-size:14px; }
+    section > .desc { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.6; }
+
+    label { display:block; font-size:11px; color:var(--muted); margin-bottom:3px; font-weight:650; }
+    input[type=text],input[type=url],input[type=number],input[type=date],input[type=password],select,textarea {
+      width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:9px; font:inherit; font-size:13px; background:#fff; color:var(--ink); }
+    textarea { resize:vertical; min-height:56px; }
+    input:focus,select:focus,textarea:focus { outline:2px solid rgba(23,25,28,.18); outline-offset:1px; }
+    .row { display:grid; gap:10px; margin-bottom:10px; }
+    .row.two { grid-template-columns:1fr 1fr; }
+    .row.three { grid-template-columns:1fr 1fr 1fr; }
+    .row.four { grid-template-columns:repeat(4,1fr); }
+    @media (max-width:720px){ .row.two,.row.three,.row.four { grid-template-columns:1fr; } }
+
+    button { font:inherit; cursor:pointer; border-radius:9px; border:1px solid var(--line); background:#fff;
+      padding:8px 12px; font-size:12px; font-weight:750; color:var(--ink); }
+    button:hover { background:#f6f7f8; }
+    button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    button.primary:hover { background:#2b2f35; }
+    button.danger { color:var(--err); border-color:#f0cfcd; background:#fff7f7; }
+    button.tiny { padding:5px 8px; font-size:11px; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:12px; }
+    .spacer { flex:1; }
+
+    .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+    .stat { padding:14px; border:1px solid var(--line); border-radius:12px; background:#fbfcfd; }
+    .stat span { display:block; color:var(--muted); font-size:11px; font-weight:650; margin-bottom:4px; }
+    .stat strong { font-size:24px; font-weight:850; letter-spacing:-.6px; font-variant-numeric:tabular-nums; }
+    .stat small { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
+
+    .card { border:1px solid var(--line); border-radius:12px; margin-bottom:8px; background:#fbfcfd; }
+    .card > .card-head { list-style:none; cursor:pointer; padding:11px 12px; display:flex; justify-content:space-between;
+      align-items:center; gap:10px; border-radius:12px; }
+    .card > .card-head::-webkit-details-marker { display:none; }
+    .card > .card-head:hover { background:#f2f4f6; }
+    .card[open] > .card-head { border-bottom:1px solid var(--line); border-radius:12px 12px 0 0; background:#f6f8fa; }
+    .card-head::before { content:"\25B8"; color:#a0a5ab; font-size:11px; flex:0 0 auto; }
+    .card[open] > .card-head::before { content:"\25BE"; }
+    .card-body { padding:12px; }
+    .list-count { color:var(--muted); font-size:11px; font-weight:650; }
+    .card-head strong { flex:1; min-width:0; text-align:left; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .card-head .side { display:flex; gap:6px; align-items:center; flex:0 0 auto; }
+    .check { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--ink); margin:0; font-weight:650; }
+    .pill { display:inline-block; padding:2px 7px; border-radius:999px; font-size:10px; font-weight:800; }
+    .pill.pin { background:#eef3ff; color:#3b66b6; }
+    .pill.off { background:#f1f2f4; color:#8a8f96; }
+    .thumb { max-width:200px; max-height:64px; border-radius:8px; border:1px solid var(--line); display:block; margin-top:6px; }
+
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td { padding:9px 6px; text-align:left; border-bottom:1px solid #eef0f2; }
+    th { font-size:11px; color:var(--muted); font-weight:700; }
+    td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+
+    .msg { margin-top:10px; font-size:12px; min-height:16px; line-height:1.5; }
+    .msg.ok { color:var(--ok); } .msg.err { color:var(--err); }
+    .hint { color:var(--muted); font-size:11px; line-height:1.65; margin:8px 0 0; }
+    code { background:#f1f3f5; padding:1px 5px; border-radius:5px; font-size:12px; }
+    pre.log { margin:10px 0 0; padding:10px 12px; background:#17191c; color:#e6e8ea; border-radius:10px;
+      font-size:11px; line-height:1.6; max-height:220px; overflow:auto; white-space:pre-wrap; }
+    .dirty { display:none; font-size:11px; font-weight:800; color:#a4660a; background:#fff5e2; padding:3px 8px; border-radius:999px; }
+    .dirty.on { display:inline-block; }
+    #login { max-width:400px; margin:80px auto; }
+    [hidden] { display:none !important; }
+    .empty { color:#9aa0a6; font-size:12px; padding:14px 0; }
+  </style>
+</head>
+<body>
+
+<section id="login">
+  <h2 style="margin:0 0 4px;font-size:15px;">CamBus 관리자</h2>
+  <p class="desc" style="margin:0 0 14px;">관리자 토큰으로 로그인하세요.</p>
+  <div class="row">
+    <div>
+      <label for="token">관리자 토큰</label>
+      <input type="password" id="token" autocomplete="current-password" placeholder="CAMBUS_ADMIN_TOKEN" />
+    </div>
+  </div>
+  <button class="primary" id="loginBtn">로그인</button>
+  <p class="msg" id="loginMsg"></p>
+  <p class="hint">서버에 <code>CAMBUS_ADMIN_TOKEN</code>이 없으면 localhost에서만 열립니다.
+    배포 시에는 반드시 토큰을 설정하세요.</p>
+</section>
+
+<div id="shell" hidden>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">CamBus 관리<small id="brandSub">—</small></div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-panel="dash">대시보드</button>
+        <button class="tab" data-panel="ads">광고</button>
+        <button class="tab" data-panel="picks">Picks</button>
+        <button class="tab" data-panel="routes">노선</button>
+        <button class="tab" data-panel="system">설정</button>
+      </nav>
+      <div class="topbar-actions">
+        <span class="dirty" id="dirtyFlag">저장 안 된 변경</span>
+        <button class="tiny" id="reloadAll">새로고침</button>
+        <button class="tiny" id="logout">로그아웃</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ 대시보드 ============ -->
+    <div class="panel active" id="panel-dash">
+      <section>
+        <h2>오늘</h2>
+        <p class="desc">한국 시간 기준입니다.</p>
+        <div class="stats" id="dashStats"></div>
+      </section>
+      <section>
+        <h2>이번 달 이용</h2>
+        <p class="desc">기능별 사용 횟수입니다.</p>
+        <table>
+          <thead><tr><th>항목</th><th class="num">오늘</th><th class="num">이번 달</th></tr></thead>
+          <tbody id="eventBody"><tr><td colspan="3" class="empty">불러오는 중…</td></tr></tbody>
+        </table>
+      </section>
+    </div>
+
+    <!-- ============ 광고 ============ -->
+    <div class="panel" id="panel-ads">
+      <section>
+        <h2>광고 배치</h2>
+        <p class="desc">Picks 피드에 배너를 몇 개 띄울지, 콘텐츠 몇 개마다 광고를 끼울지 정합니다.</p>
+        <div class="row three">
+          <div><label for="feedBannerLimit">Picks 배너 총 개수</label><input type="number" id="feedBannerLimit" min="4" max="60" /></div>
+          <div><label for="contentsPerAd">콘텐츠 몇 개마다 광고</label><input type="number" id="contentsPerAd" min="1" max="20" /></div>
+          <div><label>결과</label><input type="text" id="layoutPreview" readonly /></div>
+        </div>
+        <label>노출 위치</label>
+        <div class="row four" style="margin-top:2px;">
+          <label class="check"><input type="checkbox" data-slot="mainBottom" /> 지도 하단 배너</label>
+          <label class="check"><input type="checkbox" data-slot="launch" /> 첫 접속 대형</label>
+          <label class="check"><input type="checkbox" data-slot="picksFeed" /> Picks 인피드</label>
+          <label class="check"><input type="checkbox" data-slot="picksFooter" /> Picks 하단</label>
+        </div>
+        <div class="toolbar"><button class="primary" id="saveLayout">배치 저장</button></div>
+        <p class="msg" id="layoutMsg"></p>
+      </section>
+
+      <section>
+        <h2>지역 배너 <span class="list-count" id="adCount"></span></h2>
+        <p class="desc">직접 판매한 배너입니다. 순서가 작을수록 먼저 노출되고, 게재 기간을 비우면 제한 없이 나갑니다.</p>
+        <div id="adList"></div>
+        <div class="toolbar">
+          <button id="addAd">+ 배너 추가</button>
+          <div class="spacer"></div>
+          <button class="primary" id="saveAds">배너 저장</button>
+        </div>
+        <p class="msg" id="adsMsg"></p>
+      </section>
+
+      <section>
+        <h2>노출 · 클릭 리포트</h2>
+        <p class="desc">화면에 절반 이상이 1초 넘게 보인 것만 노출로 셉니다. 스크롤로 스친 건 제외됩니다.</p>
+        <div class="row three">
+          <div><label for="from">시작일</label><input type="date" id="from" /></div>
+          <div><label for="to">종료일</label><input type="date" id="to" /></div>
+          <div style="align-self:end;"><button id="loadReport">조회</button></div>
+        </div>
+        <table>
+          <thead><tr><th>배너</th><th class="num">노출</th><th class="num">클릭</th><th class="num">CTR</th></tr></thead>
+          <tbody id="reportBody"><tr><td colspan="4" class="empty">조회를 눌러 주세요.</td></tr></tbody>
+        </table>
+        <p class="msg" id="reportMsg"></p>
+      </section>
+    </div>
+
+    <!-- ============ Picks ============ -->
+    <div class="panel" id="panel-picks">
+      <section>
+        <h2>영대소식 자동 수집</h2>
+        <p class="desc">공개 게시판에서 조회수 상위 글을 가져옵니다. 기획 배너와 광고를 뺀 자리를 이걸로 채웁니다.</p>
+        <div id="sourceList"></div>
+        <div class="toolbar">
+          <button class="primary" id="saveSources">수집 설정 저장</button>
+          <button id="refreshFeed">지금 수집</button>
+        </div>
+        <p class="msg" id="feedMsg"></p>
+        <pre class="log" id="feedLog" hidden></pre>
+      </section>
+
+      <section>
+        <h2>기획 배너 · 수동 항목 <span class="list-count" id="feedCount"></span></h2>
+        <p class="desc"><strong>고정</strong>을 켜면 자동 수집분보다 위에 옵니다. 끄면 자동 수집분 아래로 밀립니다.</p>
+        <div id="feedList"></div>
+        <div class="toolbar">
+          <button id="addFeedItem">+ 항목 추가</button>
+          <div class="spacer"></div>
+          <button class="primary" id="saveFeed">항목 저장</button>
+        </div>
+        <p class="msg" id="feedItemMsg"></p>
+      </section>
+    </div>
+
+    <!-- ============ 노선 ============ -->
+    <div class="panel" id="panel-routes">
+      <section>
+        <h2>노선 데이터</h2>
+        <p class="desc">정류장 위치와 경로는 전용 편집기에서 지도를 보며 수정합니다.</p>
+        <div class="stats" id="routeStats"></div>
+        <div class="toolbar">
+          <button id="openStopEditor">정류장 편집기 열기</button>
+          <button id="openPathEditor">경로 편집기 열기</button>
+        </div>
+        <p class="hint">편집기는 저장 시 관리자 권한이 필요합니다. 원격에서 쓰려면 서버에
+          <code>CAMBUS_ADMIN_TOKEN</code>이 설정돼 있어야 하고, 현재 편집기는 저장 요청에 토큰을 싣지 않으므로
+          <strong>지금은 localhost에서만 저장됩니다.</strong></p>
+      </section>
+    </div>
+
+    <!-- ============ 설정 ============ -->
+    <div class="panel" id="panel-system">
+      <section>
+        <h2>서버 상태</h2>
+        <table>
+          <tbody id="systemBody"><tr><td class="empty">불러오는 중…</td></tr></tbody>
+        </table>
+      </section>
+      <section>
+        <h2>광고 네트워크</h2>
+        <p class="desc">provider와 placement는 보안상 서버 환경변수로만 바꿉니다. 이 화면에서는 현재 값만 확인합니다.</p>
+        <table><tbody id="adCfgBody"></tbody></table>
+        <p class="hint">전환하려면 서버에 <code>CAMBUS_AD_PROVIDER</code>를 바꾸고 재시작하세요.
+          승인 전이면 하우스 광고가 자동으로 자리를 지킵니다.</p>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const KEY = 'cambus-admin-token';
+  let token = sessionStorage.getItem(KEY) || '';
+  let ads = [], feedItems = [], sources = [];
+  let dirty = false;
+
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+  const num = v => (Number(v) || 0).toLocaleString('ko-KR');
+  /** 화면 전용 플래그(__open)는 서버에 보내지 않는다. */
+  const strip = list => list.map(row => {
+    const copy = { ...row };
+    delete copy.__open;
+    return copy;
+  });
+  function markDirty(on) { dirty = on; $('dirtyFlag').classList.toggle('on', on); }
+  function say(el, text, ok) { el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'err'); }
+
+  async function api(path, options) {
+    const opts = Object.assign({ cache: 'no-store' }, options || {});
+    opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    if (token) opts.headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(path, opts);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status });
+    return body;
+  }
+
+  window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+  // ---------------- 로그인 ----------------
+  async function enter() {
+    try {
+      await api('/api/admin/session');
+      $('login').hidden = true;
+      $('shell').hidden = false;
+      await loadAll();
+      return true;
+    } catch (error) {
+      if (error.status === 401) return false;
+      say($('loginMsg'), `서버 오류: ${error.message}`, false);
+      return false;
+    }
+  }
+  $('loginBtn').addEventListener('click', async () => {
+    token = $('token').value.trim();
+    sessionStorage.setItem(KEY, token);
+    if (!await enter()) say($('loginMsg'), '토큰이 올바르지 않습니다.', false);
+  });
+  $('token').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').click(); });
+  $('logout').addEventListener('click', () => {
+    if (dirty && !confirm('저장하지 않은 변경이 있습니다. 나갈까요?')) return;
+    sessionStorage.removeItem(KEY);
+    location.reload();
+  });
+  $('reloadAll').addEventListener('click', () => {
+    if (dirty && !confirm('저장하지 않은 변경이 있습니다. 다시 불러올까요?')) return;
+    markDirty(false);
+    loadAll();
+  });
+
+  // ---------------- 탭 ----------------
+  $('tabs').addEventListener('click', event => {
+    const tab = event.target.closest('.tab');
+    if (!tab) return;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tab.dataset.panel}`));
+  });
+
+  // ---------------- 대시보드 ----------------
+  const EVENT_LABELS = {
+    route_search: '길찾기 실행', guidance_start: '승하차 안내 시작',
+    ride_boarded: '탑승 처리', feed_click: 'Picks 클릭'
+  };
+  async function loadOverview() {
+    const o = await api('/api/admin/overview');
+    $('brandSub').textContent = `${o.day} · 광고 ${o.adProvider}`;
+    $('dashStats').innerHTML = `
+      <div class="stat"><span>오늘 사용자</span><strong>${num(o.visitors.today)}</strong><small>익명 브라우저 기준</small></div>
+      <div class="stat"><span>이번 달 사용자</span><strong>${num(o.visitors.month)}</strong><small>${o.month}</small></div>
+      <div class="stat"><span>오늘 광고 노출</span><strong>${num(o.ads.impressions)}</strong><small>클릭 ${num(o.ads.clicks)} · CTR ${o.ads.ctr}%</small></div>
+      <div class="stat"><span>Picks 항목</span><strong>${num(o.feed.manual + o.feed.auto)}</strong><small>수동 ${o.feed.manual}(고정 ${o.feed.pinned}) · 자동 ${o.feed.auto}</small></div>`;
+    const keys = new Set([...Object.keys(o.events.day || {}), ...Object.keys(o.events.month || {})]);
+    $('eventBody').innerHTML = keys.size
+      ? [...keys].map(k => `<tr><td>${esc(EVENT_LABELS[k] || k)}</td>` +
+          `<td class="num">${num(o.events.day[k])}</td><td class="num">${num(o.events.month[k])}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="empty">아직 기록된 이용이 없습니다.</td></tr>';
+    $('routeStats').innerHTML = Object.entries(o.routes || {}).map(([id, count]) =>
+      `<div class="stat"><span>${esc(id)} 정차 수</span><strong>${num(count)}</strong><small>회차 종점 포함</small></div>`).join('')
+      || '<p class="empty">노선 데이터를 읽지 못했습니다.</p>';
+    $('systemBody').innerHTML = `
+      <tr><td>기준 날짜</td><td>${esc(o.day)} (Asia/Seoul)</td></tr>
+      <tr><td>데이터 디렉터리</td><td><code>${esc(o.dataDir)}</code></td></tr>
+      <tr><td>Picks 자동 수집분</td><td>${num(o.feed.auto)}건</td></tr>`;
+  }
+
+  // ---------------- 광고 배치 ----------------
+  function updatePreview() {
+    const total = Number($('feedBannerLimit').value) || 0;
+    const per = Math.max(1, Number($('contentsPerAd').value) || 1);
+    let content = 0, adCount = 0, banners = 0;
+    while (banners < total) {
+      content += 1; banners += 1;
+      if (banners >= total) break;
+      if (content % per === 0) { adCount += 1; banners += 1; }
+    }
+    $('layoutPreview').value = `콘텐츠 ${content} + 광고 ${adCount}`;
+  }
+  ['feedBannerLimit', 'contentsPerAd'].forEach(id =>
+    $(id).addEventListener('input', () => { updatePreview(); markDirty(true); }));
+  document.querySelectorAll('[data-slot]').forEach(b => b.addEventListener('change', () => markDirty(true)));
+
+  async function loadLayout() {
+    const cfg = await api('/api/ad-config');
+    const layout = cfg.layout || {};
+    $('feedBannerLimit').value = layout.feedBannerLimit ?? 20;
+    $('contentsPerAd').value = layout.contentsPerAd ?? 4;
+    document.querySelectorAll('[data-slot]').forEach(box => {
+      box.checked = layout.slots?.[box.dataset.slot]?.enabled !== false;
+    });
+    updatePreview();
+    $('adCfgBody').innerHTML = `
+      <tr><td>provider</td><td><code>${esc(cfg.provider)}</code></td></tr>
+      <tr><td>네트워크 스크립트 준비</td><td>${cfg.networkScriptsReady ? '예' : '아니오 (하우스 광고로 대체)'}</td></tr>
+      <tr><td>하단 배너 높이</td><td>${esc(cfg.bannerHeight)}px</td></tr>
+      <tr><td>인피드 placement</td><td>${(cfg.feedPlacementIds || []).join(', ') || '미설정'}</td></tr>`;
+  }
+  $('saveLayout').addEventListener('click', async () => {
+    const slots = {};
+    document.querySelectorAll('[data-slot]').forEach(b => { slots[b.dataset.slot] = { enabled: b.checked }; });
+    try {
+      await api('/api/admin/ad-layout', { method: 'POST', body: JSON.stringify({
+        feedBannerLimit: Number($('feedBannerLimit').value),
+        contentsPerAd: Number($('contentsPerAd').value), slots }) });
+      markDirty(false);
+      say($('layoutMsg'), '저장했습니다. 앱을 새로고침하면 반영됩니다.', true);
+    } catch (error) { say($('layoutMsg'), `저장 실패: ${error.message}`, false); }
+  });
+
+  // ---------------- 지역 배너 ----------------
+  function renderAds() {
+    $('adList').innerHTML = ads.map((ad, i) => `
+      <details class="card" data-i="${i}" ${ad.__open ? 'open' : ''}>
+        <summary class="card-head">
+          <strong>${esc(ad.title) || '(제목 없음)'} ${ad.enabled === false ? '<span class="pill off">숨김</span>' : ''}</strong>
+          <span class="side">
+            <label class="check"><input type="checkbox" data-f="enabled" ${ad.enabled !== false ? 'checked' : ''} /> 노출</label>
+            <button class="danger tiny" data-act="del">삭제</button>
+          </span>
+        </summary>
+        <div class="card-body">
+        <div class="row two">
+          <div><label>제목</label><input type="text" data-f="title" value="${esc(ad.title)}" /></div>
+          <div><label>부제</label><input type="text" data-f="subtitle" value="${esc(ad.subtitle)}" /></div>
+        </div>
+        <div class="row two">
+          <div><label>링크 URL</label><input type="url" data-f="url" value="${esc(ad.url)}" placeholder="https:// 또는 mailto:" /></div>
+          <div><label>버튼 문구</label><input type="text" data-f="cta" value="${esc(ad.cta)}" /></div>
+        </div>
+        <div class="row three">
+          <div><label>노출 순서</label><input type="number" data-f="order" value="${Number(ad.order) || i + 1}" min="0" /></div>
+          <div><label>게재 시작</label><input type="date" data-f="startsAt" value="${esc((ad.startsAt || '').slice(0,10))}" /></div>
+          <div><label>게재 종료</label><input type="date" data-f="endsAt" value="${esc((ad.endsAt || '').slice(0,10))}" /></div>
+        </div>
+        <div>
+          <label>배너 이미지 (png/jpg/webp/gif, 3MB 이하)</label>
+          <input type="file" data-act="upload" accept="image/png,image/jpeg,image/webp,image/gif" />
+          ${ad.image ? `<img class="thumb" src="${esc(ad.image)}" alt="" />` : ''}
+        </div>
+        </div>
+      </details>`).join('') || '<p class="empty">등록된 배너가 없습니다.</p>';
+    $('adCount').textContent = `${ads.length}개`;
+  }
+  bindList($('adList'), () => ads, renderAds, $('adsMsg'));
+
+  $('addAd').addEventListener('click', () => {
+    ads.push({ id:`local-${Date.now()}`, kind:'local', title:'', subtitle:'', cta:'자세히',
+      url:'', image:null, startsAt:null, endsAt:null, order:(ads.length + 1), weight:1, enabled:true, __open:true });
+    renderAds(); markDirty(true);
+  });
+  $('saveAds').addEventListener('click', async () => {
+    try {
+      const out = await api('/api/admin/local-ads', { method:'POST', body: JSON.stringify({ ads: strip(ads) }) });
+      ads = out.ads; renderAds(); markDirty(false);
+      say($('adsMsg'), `${ads.length}개 저장했습니다. 제목과 링크가 비면 제외됩니다.`, true);
+    } catch (error) { say($('adsMsg'), `저장 실패: ${error.message}`, false); }
+  });
+
+  // ---------------- Picks 수동 항목 ----------------
+  function renderFeed() {
+    $('feedList').innerHTML = feedItems.map((it, i) => `
+      <details class="card" data-i="${i}" ${it.__open ? 'open' : ''}>
+        <summary class="card-head">
+          <strong>${esc(it.title) || '(제목 없음)'} ${it.pinned ? '<span class="pill pin">고정</span>' : ''} ${it.enabled === false ? '<span class="pill off">숨김</span>' : ''}</strong>
+          <span class="side">
+            <label class="check"><input type="checkbox" data-f="pinned" ${it.pinned ? 'checked' : ''} /> 고정</label>
+            <label class="check"><input type="checkbox" data-f="enabled" ${it.enabled !== false ? 'checked' : ''} /> 노출</label>
+            <button class="danger tiny" data-act="del">삭제</button>
+          </span>
+        </summary>
+        <div class="card-body">
+        <div class="row two">
+          <div><label>제목</label><input type="text" data-f="title" value="${esc(it.title)}" /></div>
+          <div><label>링크 URL</label><input type="url" data-f="url" value="${esc(it.url)}" /></div>
+        </div>
+        <div><label>요약</label><textarea data-f="summary">${esc(it.summary)}</textarea></div>
+        <div class="row four" style="margin-top:10px;">
+          <div><label>배지</label><input type="text" data-f="badge" value="${esc(it.badge)}" /></div>
+          <div><label>아이콘</label><input type="text" data-f="icon" value="${esc(it.icon)}" /></div>
+          <div><label>출처</label><input type="text" data-f="source" value="${esc(it.source)}" /></div>
+          <div><label>순서</label><input type="number" data-f="order" value="${Number(it.order) || (i + 1) * 10}" min="0" /></div>
+        </div>
+        </div>
+      </details>`).join('') || '<p class="empty">등록된 항목이 없습니다.</p>';
+    $('feedCount').textContent = `${feedItems.length}개 · 고정 ${feedItems.filter(x => x.pinned).length}개`;
+  }
+  bindList($('feedList'), () => feedItems, renderFeed, $('feedItemMsg'));
+
+  $('addFeedItem').addEventListener('click', () => {
+    feedItems.push({ id:`manual-${Date.now()}`, type:'utility', badge:'정보', icon:'↗', title:'', summary:'',
+      url:'', source:'', publishedAt:'', order:(feedItems.length + 1) * 10, pinned:false, enabled:true, __open:true });
+    renderFeed(); markDirty(true);
+  });
+  $('saveFeed').addEventListener('click', async () => {
+    try {
+      const out = await api('/api/admin/portal-feed', { method:'POST', body: JSON.stringify({ items: strip(feedItems) }) });
+      feedItems = out.items; renderFeed(); markDirty(false);
+      say($('feedItemMsg'), `${feedItems.length}개 저장했습니다.`, true);
+    } catch (error) { say($('feedItemMsg'), `저장 실패: ${error.message}`, false); }
+  });
+
+  // ---------------- 수집 소스 ----------------
+  function renderSources() {
+    $('sourceList').innerHTML = sources.map((src, i) => `
+      <details class="card" data-i="${i}" open>
+        <summary class="card-head">
+          <strong>${esc(src.id)} · ${esc(src.badge)}</strong>
+          <span class="side"><label class="check"><input type="checkbox" data-f="enabled" ${src.enabled !== false ? 'checked' : ''} /> 사용</label></span>
+        </summary>
+        <div class="card-body">
+        <div><label>게시판 URL</label><input type="url" data-f="url" value="${esc(src.url)}" /></div>
+        <div class="row three" style="margin-top:10px;">
+          <div><label>수집 페이지 수</label><input type="number" data-f="pages" value="${Number(src.pages) || 2}" min="1" max="10" /></div>
+          <div><label>페이지당 글 수</label><input type="number" data-f="pageSize" value="${Number(src.pageSize) || 10}" min="1" max="100" /></div>
+          <div><label>조회수 상위 몇 개</label><input type="number" data-f="limit" value="${Number(src.limit) || 12}" min="1" max="60" /></div>
+        </div>
+        </div>
+      </details>`).join('') || '<p class="empty">수집 소스가 없습니다.</p>';
+  }
+  bindList($('sourceList'), () => sources, renderSources, $('feedMsg'));
+
+  $('saveSources').addEventListener('click', async () => {
+    try {
+      const out = await api('/api/admin/feed-sources', { method:'POST', body: JSON.stringify({ sources }) });
+      sources = out.sources; renderSources(); markDirty(false);
+      say($('feedMsg'), '수집 설정을 저장했습니다.', true);
+    } catch (error) { say($('feedMsg'), `저장 실패: ${error.message}`, false); }
+  });
+  $('refreshFeed').addEventListener('click', async () => {
+    const btn = $('refreshFeed');
+    btn.disabled = true; btn.textContent = '수집 중…';
+    say($('feedMsg'), '게시판을 읽고 있습니다. 최대 1분 정도 걸립니다.', true);
+    try {
+      const out = await api('/api/admin/refresh-feed', { method:'POST', body:'{}' });
+      $('feedLog').hidden = false;
+      $('feedLog').textContent = out.log || '(출력 없음)';
+      say($('feedMsg'), out.ok ? `수집 완료 · 자동 항목 ${out.collected}건` : `수집 실패: ${out.error}`, out.ok);
+      await loadOverview();
+    } catch (error) {
+      say($('feedMsg'), `수집 실패: ${error.message}`, false);
+    } finally { btn.disabled = false; btn.textContent = '지금 수집'; }
+  });
+
+  // ---------------- 리포트 ----------------
+  $('loadReport').addEventListener('click', async () => {
+    try {
+      const params = new URLSearchParams();
+      if ($('from').value) params.set('from', $('from').value);
+      if ($('to').value) params.set('to', $('to').value);
+      const out = await api(`/api/ad-report?${params}`);
+      const rows = Object.entries(out.totals || {});
+      $('reportBody').innerHTML = rows.length
+        ? rows.sort((a, b) => b[1].impressions - a[1].impressions).map(([id, t]) =>
+            `<tr><td>${esc(id)}</td><td class="num">${num(t.impressions)}</td><td class="num">${num(t.clicks)}</td><td class="num">${t.ctr}%</td></tr>`).join('')
+        : '<tr><td colspan="4" class="empty">해당 기간에 기록된 노출이 없습니다.</td></tr>';
+      say($('reportMsg'), `${(out.daily || []).length}일치 집계`, true);
+    } catch (error) { say($('reportMsg'), `조회 실패: ${error.message}`, false); }
+  });
+
+  // ---------------- 노선 편집기 ----------------
+  $('openStopEditor').addEventListener('click', () => window.open('./stop-editor.html', '_blank', 'noopener'));
+  $('openPathEditor').addEventListener('click', () => window.open('./path-editor.html', '_blank', 'noopener'));
+
+  /** 카드 목록 공통 동작: 입력 반영, 삭제, 이미지 업로드 */
+  function bindList(root, getList, render, msgEl) {
+    root.addEventListener('input', event => {
+      const wrap = event.target.closest('.card');
+      const field = event.target.dataset.f;
+      if (!wrap || !field) return;
+      const row = getList()[Number(wrap.dataset.i)];
+      row[field] = event.target.type === 'checkbox' ? event.target.checked
+        : ['order','pages','pageSize','limit','weight'].includes(field) ? Number(event.target.value)
+        : event.target.value;
+      markDirty(true);
+    });
+    root.addEventListener('change', async event => {
+      const wrap = event.target.closest('.card');
+      if (!wrap) return;
+      if (event.target.dataset.f) {
+        // 배지를 갱신하려고 다시 그리므로, 펼쳐둔 카드는 그대로 열어 둔다.
+        const list = getList();
+        for (const card of root.querySelectorAll('.card')) {
+          const row = list[Number(card.dataset.i)];
+          if (row) row.__open = card.open;
+        }
+        render();
+        return;
+      }
+      if (event.target.dataset.act !== 'upload') return;
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const row = getList()[Number(wrap.dataset.i)];
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('read_failed'));
+          reader.readAsDataURL(file);
+        });
+        const out = await api('/api/admin/upload', { method:'POST', body: JSON.stringify({ dataUrl }) });
+        row.image = out.url; render(); markDirty(true);
+        say(msgEl, `이미지 업로드 완료 (${Math.round(out.bytes / 1024)}KB). 저장을 눌러야 반영됩니다.`, true);
+      } catch (error) { say(msgEl, `업로드 실패: ${error.message}`, false); }
+    });
+    root.addEventListener('click', event => {
+      // summary 안의 체크박스·버튼을 눌렀을 때 카드가 접히거나 펼쳐지지 않게 한다.
+      if (event.target.closest('.card-head') && event.target.closest('input,button,label')) {
+        event.stopPropagation();
+        if (event.target.tagName !== 'INPUT') event.preventDefault();
+      }
+      if (event.target.dataset.act !== 'del') return;
+      const wrap = event.target.closest('.card');
+      getList().splice(Number(wrap.dataset.i), 1);
+      render(); markDirty(true);
+    });
+  }
+
+  async function loadAll() {
+    const [, , adsOut, feedOut, srcOut] = await Promise.all([
+      loadOverview(), loadLayout(),
+      api('/api/admin/local-ads'), api('/api/admin/portal-feed'), api('/api/admin/feed-sources')
+    ]);
+    ads = adsOut.ads || []; renderAds();
+    feedItems = feedOut.items || []; renderFeed();
+    sources = srcOut.sources || []; renderSources();
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  $('to').value = today;
+  $('from').value = new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10);
+  enter();
+})();
+</script>
+</body>
+</html>

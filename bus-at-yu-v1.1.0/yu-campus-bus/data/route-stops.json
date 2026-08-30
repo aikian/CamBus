@@ -3,7 +3,7 @@
   "updatedAt": "2026-08-30T00:53:22.183Z",
   "routes": {
     "r1": {
-      "name": "1노선 (인문계)",
+      "name": "셔틀1 (인문계)",
       "color": "#e63946",
       "guideImage": "route-guide-r1.png",
       "stops": [
@@ -109,7 +109,7 @@
       ]
     },
     "r2": {
-      "name": "2노선 (자연계)",
+      "name": "셔틀2 (자연계)",
       "color": "#3478f6",
       "guideImage": "route-guide-r2.png",
       "stops": [

@@ -328,7 +328,7 @@ async function save() {
 }
 
 function showGuide() {
-  ui.guideTitle.textContent = activeRouteId === 'r1' ? '1노선 손그림 노선도' : '2노선 손그림 노선도';
+  ui.guideTitle.textContent = activeRouteId === 'r1' ? '셔틀1 손그림 노선도' : '셔틀2 손그림 노선도';
   ui.guideImage.src = activeRouteId === 'r1' ? './route-guide-r1.png' : './route-guide-r2.png';
   ui.guideDialog.showModal();
 }

@@ -124,7 +124,7 @@
           last.seconds += hop;
         } else {
           segments.push({
-            lineIdx: node.lineIdx, ref: line.ref, lineName: line.name,
+            lineIdx: node.lineIdx, ref: line.ref, lineName: line.name, color: line.color,
             from: station.name, fromCoord: station.coord,
             to: station.name, toCoord: station.coord,
             stationIdx: node.stationIdx, stops: 0, seconds: 0

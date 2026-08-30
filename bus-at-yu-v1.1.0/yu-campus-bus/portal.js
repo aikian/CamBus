@@ -19,11 +19,17 @@
   const monthUsers = document.getElementById('monthUsers');
   const visitorNote = document.getElementById('visitorNote');
 
-  // 콘텐츠 4개마다 광고 슬롯 1개.
-  // 슬롯은 ads.js가 Ezoic placement로 채우고, placement가 없으면 하우스 광고로 남는다.
-  const CONTENTS_PER_AD = 4;
-  // 광고를 포함한 피드 배너 총 개수. 20개면 콘텐츠 16 + 광고 4가 된다.
-  const FEED_BANNER_LIMIT = 20;
+  // 배치는 관리자 화면에서 정한다(/api/ad-config 의 layout). 아래는 설정을 못 읽었을 때의 기본값.
+  const DEFAULT_CONTENTS_PER_AD = 4;
+  const DEFAULT_FEED_BANNER_LIMIT = 20;
+  function adLayout() {
+    const layout = window.YUAds?.config?.layout || {};
+    return {
+      contentsPerAd: Math.max(1, Number(layout.contentsPerAd) || DEFAULT_CONTENTS_PER_AD),
+      bannerLimit: Math.max(1, Number(layout.feedBannerLimit) || DEFAULT_FEED_BANNER_LIMIT),
+      feedEnabled: layout.slots?.picksFeed?.enabled !== false
+    };
+  }
   let currentPage = 0;
   let localAds = [];
   let touchStart = null;
@@ -59,6 +65,8 @@
   });
   edge?.addEventListener('click', () => setPage(1));
   window.addEventListener('hashchange', () => setPage(pageFromHash()));
+  // 광고 배치 설정은 비동기로 온다. 먼저 그려졌다면 설정 도착 후 한 번 다시 그린다.
+  window.addEventListener('cambus:ad-config-ready', () => { if (feedList?.children.length) loadFeed(); }, { once: true });
 
   function swipeBlocked(target) {
     if (!(target instanceof Element)) return false;
@@ -237,6 +245,7 @@
     }
 
     section.append(label, slot);
+    window.YUAds?.trackAd?.(section, ad ? `local:${ad.id || adIndex}` : 'house:recruit', 'picksFeed');
     return section;
   }
 
@@ -247,16 +256,17 @@
     const list = validItems(items);
     empty.hidden = list.length > 0;
 
+    const { contentsPerAd, bannerLimit, feedEnabled } = adLayout();
     let adIndex = 0;
     let contentCount = 0;
     let banners = 0;
     for (const item of list) {
-      if (banners >= FEED_BANNER_LIMIT) break;
+      if (banners >= bannerLimit) break;
       feedList.appendChild(makeFeedCard(item));
       contentCount += 1;
       banners += 1;
-      if (banners >= FEED_BANNER_LIMIT) break;
-      if (contentCount % CONTENTS_PER_AD === 0) {
+      if (banners >= bannerLimit) break;
+      if (feedEnabled && contentCount % contentsPerAd === 0) {
         adIndex += 1;
         feedList.appendChild(makeInlineAd(adIndex));
         banners += 1;

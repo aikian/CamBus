@@ -1,6 +1,7 @@
-const CACHE = 'cambus-v1.8.0-citybus';
+const CACHE = 'cambus-v1.9.0-naming';
 const SHELL = [
   './', './index.html', './styles.css', './portal.js', './route-utils.js', './subway-router.js', './app.js', './map-ui.js', './ads.js', './install.js',
+  './admin.html', './privacy.html',
   './stop-editor.html', './stop-editor.css', './stop-editor.js',
   './path-editor.html', './path-editor.css', './path-editor.js',
   './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './icon-192-maskable.png', './icon-512-maskable.png', './apple-touch-icon.png', './route-guide-r1.png', './route-guide-r2.png',

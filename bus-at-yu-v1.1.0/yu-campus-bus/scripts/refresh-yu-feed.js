@@ -12,8 +12,10 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const SOURCES = path.join(ROOT, 'data', 'feed-sources.json');
-const OUTPUT = path.join(ROOT, 'data', 'portal-auto.json');
+// 서버와 같은 데이터 디렉터리를 봐야 배포 환경(마운트한 볼륨)에서도 결과가 반영된다.
+const DATA_DIR = process.env.CAMBUS_DATA_DIR ? path.resolve(process.env.CAMBUS_DATA_DIR) : path.join(ROOT, 'data');
+const SOURCES = path.join(DATA_DIR, 'feed-sources.json');
+const OUTPUT = path.join(DATA_DIR, 'portal-auto.json');
 const UA = 'CamBus/1.1 feed refresher (+https://bus.yu.local)';
 
 function stripHtml(s = '') {
