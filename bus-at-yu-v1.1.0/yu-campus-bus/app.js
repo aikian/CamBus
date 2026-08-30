@@ -13,10 +13,27 @@ const DWELL_SECONDS = 5 * 60;
 // 정류장에 일괄 적용합니다. 25인승 셔틀에서 문 열고 몇 명 타고 내리는 데 걸리는 현실적인
 // 값으로 15초를 기본값으로 두었고, 실측이 들어오면 route-timings.json 쪽에서 보정합니다.
 const BOARDING_SECONDS = 15;
+// 직선거리 기반 예비 점수 상위 몇 개까지 실제 보행 경로를 확인할지. 예비 점수는 직선거리로
+// 도보 시간을 과소평가하므로 1개만 믿으면 순위가 뒤집힙니다. 보행 경로는 캐시됩니다.
+const BUS_CANDIDATES_TO_VERIFY = 5;
 const BOARD_NEAR_METERS = 220;
 const BOARD_AT_STOP_METERS = 70;
-const ALIGHT_SOON_METERS = 350;
+const ALIGHT_SOON_METERS = 240;
 const ALIGHT_NOW_METERS = 120;
+
+// 승하차 자동 판정 기준.
+// 걷기는 보통 1.2~1.6 m/s 이므로, 그보다 확실히 빠른 값이 몇 번 연속으로 나오고
+// 승차 정류장에서 멀어지기 시작하면 버스에 탄 것으로 본다.
+const GPS_MAX_ACCURACY_METERS = 90;   // 이보다 부정확한 측정은 단계 전환에 쓰지 않는다
+const RIDE_SPEED_MPS = 2.8;           // 약 10km/h - 도보와 확실히 구분되는 속도
+const STOPPED_SPEED_MPS = 0.7;        // 정차 판정
+const RIDE_CONFIRM_SAMPLES = 2;       // 연속 표본 수(한 번 튄 값으로 오판하지 않기 위함)
+const ALIGHT_SOON_SECONDS = 75;       // 속도 기준 하차 예고
+const PASSED_STOP_METERS = 130;       // 최근접 이후 이만큼 멀어지면 지나친 것으로 본다
+const SPEED_WINDOW = 4;               // 속도 평활 표본 수
+// 교내 순환버스가 낼 수 없는 속도는 GPS 튐으로 보고 표본에서 버린다.
+// (넣고 자르면 평균이 오염돼 탑승/정차 판정이 어긋난다)
+const MAX_PLAUSIBLE_SPEED_MPS = 25;
 const API_BASE = '';
 const LIVE_POLL_MS = 12000;
 const TELEMETRY_UPLOAD_MS = 8000;
@@ -24,6 +41,14 @@ const BUS_RENDER_MS = 5000;
 const ROUTE_TIMINGS_URL = './data/route-timings.json';
 const ROUTE_STOPS_URL = './data/route-stops.json';
 const ROUTE_PATHS_URL = './data/route-paths.json';
+const SUBWAY_URL = './data/subway-daegu.json';
+// 캠퍼스에서 이만큼 떨어진 곳에서 출발하면 지하철/시내버스로 캠퍼스까지 오는 경로도 제안합니다.
+const OFF_CAMPUS_METERS = 1500;
+const SUBWAY_WALK_METERS = 1200;   // 출발지에서 이 거리 안의 역만 후보로 봅니다
+const CAMPUS_GATEWAY_STATION = '영남대';
+const CAMPUS_GATEWAY_COORD = [35.8369, 128.7542];   // 영남대 앞 시내버스 정류장
+const MAX_WALK_ONLY_METERS = 3000;     // 도보만으로 안내할 최대 거리
+const MAX_ACCESS_WALK_METERS = 2500;   // 승·하차 정류장까지 걷는 총 거리 상한
 const PM_ZONES_ENABLED = false;
 const { canonicalStopIndex, routeLegIndices, serviceStopEntries, buildTransferStations, transferWalkSeconds } = window.CamBusRouteUtils;
 
@@ -69,15 +94,17 @@ const ROUTES = {
     guideImage: 'route-guide-r1.png',
     guideNote: '사용자가 보내준 손그림 경로 이미지 기준으로 정차 위치를 수동 보정했습니다.',
     stops: [
-      stop('r1-1','박물관','A02',['국제교류센터','YU International Center','영남대역 4번출구','국제교류센터 주차장 입구 횡단보도'],[35.83676,128.75442],'천연잔디축구장 앞',0,'영남대역 4번출구, 대구은행, 시내·시외버스 환승'),
-      stop('r1-2','사범대','B04',['사범대학','College of Education','중앙도서관','중도','중앙도서관 횡단보도'],[35.83526,128.75950],'사범대학 건너편',BOARDING_SECONDS,'사범대, 중앙도서관, 학생회관 학식, GS25, 정행대, 스타벅스'),
-      stop('r1-3','음악관','A10',['음악대학','음악관','중앙테니스장','예술대학'],[35.83516,128.76131],'양방향 정차 가능 구간',BOARDING_SECONDS,'음대, 중앙테니스장, 동문 방향'),
-      stop('r1-4','인문강당','B03',['인문관','인문관 강당','종강'],[35.83398,128.76029],'천마관 건너편',BOARDING_SECONDS,'인문관, 인문관강당, 종합강의동, 제2인문관'),
-      stop('r1-5','인문관','B03',['인문관 정문','대학본부'],[35.83298,128.75899],'대학본부·제1과학관 방향',BOARDING_SECONDS,'인문관, 대학본부, 제1과학관 방향 이동에 유리'),
-      stop('r1-6','서문','서문',['서문','인조잔디축구장','기숙사'],[35.83255,128.75190],'5분 정차 · 순환지점',DWELL_SECONDS,'기숙사, 서문, 남매지, 축구장'),
-      stop('r1-7','과학관','F21',['제1과학관','정보전산원'],[35.83025,128.75749],'정보전산원 일방통행 오르막길 옆',BOARDING_SECONDS,'제1과학관, 생활과학대학, 거울못, 대학본부'),
-      stop('r1-8','천마관','C03',['천마관','종합강의동','General Lecture Hall'],[35.83330,128.76082],'인문관 건너편',BOARDING_SECONDS,'천마관, 인문관 반대편 승하차 지점'),
-      stop('r1-9','박물관','A02',['국제교류센터','YU International Center','영남대역 4번출구'],[35.83661,128.75466],'천연잔디축구장 건너편',0,'기점 복귀 지점')
+      stop('r1-1','박물관','A02',['국제교류센터','YU International Center','영남대역 4번출구','국제교류센터 주차장 입구 횡단보도'],[35.836252,128.755356],'천연잔디축구장 앞',0,'영남대역 4번출구, 대구은행, 시내·시외버스 환승'),
+      stop('r1-2','사범대','B04',['사범대학','College of Education','중앙도서관','중도','중앙도서관 횡단보도'],[35.833928,128.757695],'사범대학 건너편',BOARDING_SECONDS,'사범대, 중앙도서관, 학생회관 학식, GS25, 정행대, 스타벅스'),
+      stop('r1-3','음악관','A10',['음악대학','음악관','중앙테니스장','예술대학'],[35.83407,128.76073],'양방향 정차 가능 구간',BOARDING_SECONDS,'음대, 중앙테니스장, 동문 방향'),
+      stop('r1-4','인문강당','B03',['인문관','인문관 강당','종강'],[35.832562,128.759154],'천마관 건너편',BOARDING_SECONDS,'인문관, 인문관강당, 종합강의동, 제2인문관'),
+      stop('r1-5','인문관','B03',['인문관 정문','대학본부'],[35.831079,128.758124],'대학본부·제1과학관 방향',BOARDING_SECONDS,'인문관, 대학본부, 제1과학관 방향 이동에 유리'),
+      stop('r1-6','서문','서문',['서문','인조잔디축구장','기숙사'],[35.831288,128.750432],'5분 정차 · 순환지점',DWELL_SECONDS,'기숙사, 서문, 남매지, 축구장'),
+      stop('r1-7','과학관','F21',['제1과학관','정보전산원'],[35.831023,128.756579],'정보전산원 일방통행 오르막길 옆',BOARDING_SECONDS,'제1과학관, 생활과학대학, 거울못, 대학본부'),
+      stop('r1-8','천마관','C03',['천마관','종합강의동','General Lecture Hall'],[35.8321,128.75939],'인문관 건너편',BOARDING_SECONDS,'천마관, 인문관 반대편 승하차 지점'),
+      stop('r1-9','음악관','A10',['음악대학','음악관','중앙테니스장','예술대학'],[35.83407,128.76073],'복귀 방향 정차',BOARDING_SECONDS,'음대, 중앙테니스장, 동문 방향'),
+      stop('r1-10','사범대','A08',['사범대학','College of Education','중앙도서관','중도'],[35.834141,128.757765],'중앙도서관 건너편 횡단보도',BOARDING_SECONDS,'사범대, 중앙도서관, 상경관, 정행대'),
+      stop('r1-11','박물관','A02',['국제교류센터','YU International Center','영남대역 4번출구'],[35.836289,128.755522],'천연잔디축구장 건너편',0,'기점 복귀 지점')
     ]
   },
   r2: {
@@ -88,15 +115,18 @@ const ROUTES = {
     guideImage: 'route-guide-r2.png',
     guideNote: '현재 공식 정류장 체계를 유지하되, 정차 위치는 손그림 이미지와 설명을 참고해 보정했습니다.',
     stops: [
-      stop('r2-1','노천강당','B01',['노천강당','Amphitheater','영남대역 3번출구'],[35.83628,128.75788],'천마로 방향 · 차량출입 통제구역 끝',0,'상경관, 우체국, 영남대역 3번출구'),
-      stop('r2-2','과학관','F21',['제1과학관','정보전산원'],[35.83025,128.75749],'정보전산원 일방통행 오르막길 옆',BOARDING_SECONDS,'제1과학관, 정보전산원'),
-      stop('r2-3','거울못','F22',['제2과학관','생활과학대학'],[35.83006,128.75893],'생활과학대학 건너편',BOARDING_SECONDS,'제2과학관, 제3과학관, 법전원, 러브로드, 생활과학대학'),
-      stop('r2-4','이도','F27',['생명응용과학대학','생명응용과학대 본관','자연계학식','이종우과학도서관','약학관'],[35.82850,128.75879],'약학관 건너편',BOARDING_SECONDS,'생명응용과학대학, 자연계 학식, 이종우과학도서관, 약대'),
-      stop('r2-5','아트센터','E02',['천마아트센터','Chunma Art Center'],[35.83286,128.75262],'서문 직전 서측 정차',BOARDING_SECONDS,'천마아트센터, 서문 접근 정류장'),
-      stop('r2-6','서문','서문',['서문','인조잔디축구장','기숙사'],[35.83255,128.75190],'5분 정차 · 순환지점',DWELL_SECONDS,'기숙사, 서문, 남매지, 축구장'),
-      stop('r2-7','기계관','E29',['기계관','Mechanical Engineering Building','자전거 보관소'],[35.82688,128.75709],'자전거보관소 건너편',BOARDING_SECONDS,'기계관, 소재관, 자동차관, 로봇관, 후문 방향'),
-      stop('r2-8','중도','B04',['중앙도서관','상경관'],[35.83548,128.75931],'상경관·정행대 접근',BOARDING_SECONDS,'중앙도서관, 상경관, 정치행정대학, 스타벅스, 중도학식'),
-      stop('r2-9','노천강당','B01',['노천강당','Amphitheater','영남대역 3번출구'],[35.83635,128.75799],'천마로 방향 · 차량출입 통제구역 끝',0,'기점 복귀 지점')
+      stop('r2-1','노천강당','B01',['노천강당','Amphitheater','영남대역 3번출구'],[35.83418,128.754069],'천마로 방향 · 차량출입 통제구역 끝',0,'상경관, 우체국, 영남대역 3번출구'),
+      stop('r2-2','과학관','F21',['제1과학관','정보전산원'],[35.830992,128.756477],'정보전산원 일방통행 오르막길 옆',BOARDING_SECONDS,'제1과학관, 정보전산원'),
+      stop('r2-3','거울못','F22',['제2과학관','생활과학대학'],[35.830218,128.758805],'생활과학대학 건너편',BOARDING_SECONDS,'제2과학관, 제3과학관, 법전원, 러브로드, 생활과학대학'),
+      stop('r2-4','이도','F27',['생명응용과학대학','생명응용과학대 본관','자연계학식','이종우과학도서관','약학관'],[35.828496,128.757566],'약학관 건너편',BOARDING_SECONDS,'생명응용과학대학, 자연계 학식, 이종우과학도서관, 약대'),
+      stop('r2-5','기계관','E29',['기계관','Mechanical Engineering Building','자전거 보관소'],[35.826808,128.754777],'후문·삼풍동 방향',BOARDING_SECONDS,'기계관, 소재관, 자동차관, 로봇관, 후문 방향'),
+      stop('r2-6','아트센터','E02',['천마아트센터','Chunma Art Center'],[35.83154,128.752942],'서문 직전 서측 정차',BOARDING_SECONDS,'천마아트센터, 서문 접근 정류장'),
+      stop('r2-7','서문','서문',['서문','인조잔디축구장','기숙사'],[35.831379,128.750458],'5분 정차 · 순환지점',DWELL_SECONDS,'기숙사, 서문, 남매지, 축구장'),
+      stop('r2-8','기계관','E29',['기계관','Mechanical Engineering Building','자전거 보관소'],[35.826643,128.754584],'자전거보관소 건너편',BOARDING_SECONDS,'기계관, 소재관, 자동차관, 로봇관, 후문 방향'),
+      stop('r2-9','이도','G07',['약학관','이종우과학도서관','생명응용과학대학'],[35.828422,128.757765],'생명응용과학대학 본관 오르막길 건너편',BOARDING_SECONDS,'약학관, 생명응용과학대학 반대편'),
+      stop('r2-10','거울못','G01',['생활과학대학','생활과학대학 본관','제2과학관'],[35.830131,128.759025],'제2과학관 건너편',BOARDING_SECONDS,'생활과학대학, 제2과학관 반대편'),
+      stop('r2-11','중도','B04',['중앙도서관','상경관'],[35.832871,128.757137],'상경관·정행대 접근',BOARDING_SECONDS,'중앙도서관, 상경관, 정치행정대학, 스타벅스, 중도학식'),
+      stop('r2-12','노천강당','B01',['노천강당','Amphitheater','영남대역 3번출구'],[35.834232,128.754251],'천마로 방향 · 차량출입 통제구역 끝',0,'기점 복귀 지점')
     ]
   }
 };
@@ -160,7 +190,9 @@ const state = {
   predictedBusVisuals: new Map(),
   crowdBusVisuals: new Map(),
   departureAt: null,
-  drawnRouteGeometry: {}
+  drawnRouteGeometry: {},
+  subway: null,
+  cityBusEnabled: false
 };
 
 // null departureAt means "지금 출발" — planRoutes()/후속 계산은 이 값을 기준 시각으로 사용합니다.
@@ -243,6 +275,12 @@ function transferBadgeHtml(routeId, stopInfo, index) {
   return `<div class="popup-transfer">🔄 환승 가능 · ${escapeHtml(text)}</div>`;
 }
 
+// 지도에서 정류장을 누르면 팝업에서 바로 그 정류장까지 길찾기를 실행할 수 있게 합니다.
+function routeToButtonHtml(name, coord) {
+  if (!Array.isArray(coord)) return '';
+  return `<button type="button" class="popup-route-btn" data-lat="${coord[0]}" data-lng="${coord[1]}" data-name="${escapeHtml(name)}">여기로 길찾기</button>`;
+}
+
 function stopPopupHtml(route, stopInfo, index) {
   return `
     <div class="popup-stop">
@@ -251,6 +289,7 @@ function stopPopupHtml(route, stopInfo, index) {
       ${stopInfo.guide ? `<div style="margin-top:6px;line-height:1.45"><small>${escapeHtml(stopInfo.guide)}</small></div>` : ''}
       ${transferBadgeHtml(route.id, stopInfo, index)}
       ${stopEtaHtml(route.id, index)}
+      ${routeToButtonHtml(stopInfo.name, liveStopCoord(route.id, index) || stopInfo.coord)}
     </div>`;
 }
 
@@ -286,6 +325,7 @@ function combinedStationPopupHtml(station) {
   return `<div class="popup-stop popup-stop-merged">
     <strong>${escapeHtml(station.name)} <span class="popup-transfer-tag">환승역</span></strong>
     ${blocks}
+    ${routeToButtonHtml(station.name, canonicalStationCoord(station))}
   </div>`;
 }
 
@@ -295,15 +335,24 @@ function makeStopNamePin(name, cls) {
   return L.divIcon({ className: '', html: `<div class="stop-pin ${cls}">${escapeHtml(label)}</div>`, iconSize: [width, 22], iconAnchor: [width / 2, 11] });
 }
 
+// 한 바퀴 도는 동안 같은 역에 두 번 정차하는 경우(음악관·기계관·이도·거울못·사범대 등)가
+// 있습니다. 경로 계산은 두 정차를 모두 알아야 하지만(그래야 가까운 쪽에서 내릴 수 있음),
+// 지도에는 역 하나당 핀 하나만 그립니다. 여기서는 노선 안에서 같은 이름의 첫 정차만 그립니다.
+function isFirstStopOfStation(route, index) {
+  const name = route.stops[index]?.name;
+  for (let i = 0; i < index; i++) if (route.stops[i].name === name) return false;
+  return true;
+}
+
 function renderStops() {
   for (const routeId of ['r1', 'r2']) {
     state.stopLayers[routeId].forEach(l => map.removeLayer(l));
     state.stopLayers[routeId] = [];
     const route = ROUTES[routeId];
     route.stops.forEach((s, i) => {
-      // 배열의 마지막 정류장은 기점으로 되돌아오는 순환 종점(=0번과 같은 지점)이라 별도
-      // 마커를 그리지 않습니다. canonicalStopIndex()가 이미 같은 지점으로 취급합니다.
+      // 순환 종점과 같은 역의 두 번째 이후 정차는 마커를 그리지 않습니다.
       if (i === route.stops.length - 1) return;
+      if (!isFirstStopOfStation(route, i)) return;
       const station = mergeableStation(routeId, s, i);
       const coord = station ? canonicalStationCoord(station) : s.coord;
       const icon = station
@@ -326,6 +375,26 @@ async function loadRouteTimingConfig() {
   } catch (e) {
     console.warn('Route timing config unavailable; using OSRM durations.', e);
     state.timingConfig = null;
+  }
+}
+
+async function loadCityBusConfig() {
+  try {
+    const response = await fetchWithTimeout(`${API_BASE}/api/city-bus/config`, {}, 4000);
+    state.cityBusEnabled = response.ok ? Boolean((await response.json()).enabled) : false;
+  } catch {
+    state.cityBusEnabled = false;   // 정적 서버로 띄우면 시내버스 경로는 빠집니다
+  }
+}
+
+async function loadSubwayNetwork() {
+  try {
+    const response = await fetch(SUBWAY_URL, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`subway ${response.status}`);
+    state.subway = window.CamBusSubway.build(await response.json());
+  } catch (error) {
+    console.warn('Subway network unavailable; off-campus plans disabled.', error);
+    state.subway = null;
   }
 }
 
@@ -600,7 +669,7 @@ function offsetRouteGeometry(coords, pixels, otherCoords) {
 
 async function initializeRoutes() {
   updateStatus('loading');
-  const configLoads = [loadRouteTimingConfig(), loadRoutePathConfig()];
+  const configLoads = [loadRouteTimingConfig(), loadRoutePathConfig(), loadSubwayNetwork(), loadCityBusConfig()];
   if (PM_ZONES_ENABLED) configLoads.push(loadMobilityZoneData());
   await Promise.all(configLoads);
   renderStops();
@@ -626,6 +695,8 @@ function updateStatus(mode) {
   const dot = document.getElementById('statusDot');
   const title = document.getElementById('statusTitle');
   const detail = document.getElementById('statusDetail');
+  // 상태 줄은 길찾기 화면에서 뺐다. 요소가 없으면 조용히 넘어간다.
+  if (!dot || !title || !detail) return;
   dot.className = 'status-dot';
   if (mode === 'loading') {
     title.textContent = '노선 불러오는 중';
@@ -1202,6 +1273,13 @@ function nextArrivalAtStop(routeId, stopIdx, now = nowClock()) {
 }
 
 function secToMin(sec) { return Math.max(1, Math.round(sec / 60)); }
+// 60분이 넘으면 "1시간 20분" 처럼 보여줍니다.
+function durationText(sec) {
+  const minutes = secToMin(sec);
+  if (minutes < 60) return `${minutes}분`;
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  return m ? `${h}시간 ${m}분` : `${h}시간`;
+}
 function mToText(m) { return m < 1000 ? `${Math.round(m / 10) * 10}m` : `${(m / 1000).toFixed(1)}km`; }
 function timeText(date) { return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }); }
 
@@ -1279,6 +1357,188 @@ async function buildTransferPlan(station, first, second) {
   };
 }
 
+/* 캠퍼스 밖에서 출발할 때 쓰는 경로.
+ * 지하철로 영남대역까지 온 뒤 교내에서 목적지까지 이어붙입니다. 노선 선(폴리라인)은 그리지
+ * 않고 "어디서 타고 어디서 내리는지"만 안내합니다. 지하철 구간은 시각표 기반 추정입니다.
+ */
+async function buildOffCampusPlan() {
+  if (!state.subway || !state.user || !state.destination) return null;
+
+  const campusCenter = [
+    (CAMPUS_BOUNDS[0][0] + CAMPUS_BOUNDS[1][0]) / 2,
+    (CAMPUS_BOUNDS[0][1] + CAMPUS_BOUNDS[1][1]) / 2
+  ];
+  // 이미 캠퍼스 안/근처에서 출발하면 교내 경로가 더 낫습니다.
+  if (haversine(state.user, campusCenter) < OFF_CAMPUS_METERS) return null;
+
+  const boardCandidates = state.subway.nearestStations(state.user, SUBWAY_WALK_METERS, 3);
+  if (!boardCandidates.length) return null;
+
+  const gateway = state.subway.nearestStations(
+    state.subway.findStationCoord(CAMPUS_GATEWAY_STATION) || campusCenter, 300, 1
+  )[0];
+  if (!gateway) return null;
+
+  let best = null;
+  for (const boardStation of boardCandidates) {
+    if (boardStation.name === CAMPUS_GATEWAY_STATION) continue;
+    const ride = state.subway.findRoute(boardStation.name, CAMPUS_GATEWAY_STATION);
+    if (!ride) continue;
+    const walkIn = await footRoute(state.user, boardStation.coord);
+    if (!walkIn.ok) continue;
+    const total = walkIn.duration + ride.seconds;
+    if (!best || total < best.total) best = { boardStation, ride, walkIn, total };
+  }
+  if (!best) return null;
+
+  // 영남대역에서 목적지까지: 도보와 교내버스 중 빠른 쪽
+  const stationCoord = best.ride.segments.at(-1).toCoord;
+  const lastLeg = await campusLegFrom(stationCoord, state.destination);
+  if (!lastLeg) return null;
+
+  const totalSeconds = best.walkIn.duration + best.ride.seconds + lastLeg.seconds;
+  const lineLabel = best.ride.segments.map(s => `${s.ref}호선`).join(' → ');
+
+  const steps = [
+    `${best.boardStation.name}역까지 도보 ${mToText(best.walkIn.distance)}`,
+    ...best.ride.segments.map(s => `${s.ref}호선 ${s.from} 승차 → ${s.to} 하차 · ${s.stops}정거장`),
+    ...lastLeg.steps
+  ];
+
+  return {
+    type: 'offcampus',
+    duration: totalSeconds,
+    distance: best.walkIn.distance + (lastLeg.walkDistance || 0),
+    subwayRide: best.ride,
+    subwayBoard: best.boardStation,
+    walkIn: best.walkIn,
+    campusLeg: lastLeg,
+    title: `지하철 ${lineLabel}`,
+    steps
+  };
+}
+
+/* 캠퍼스 밖에서 시내버스로 오는 경로.
+ * 출발지 주변 정류소와 영남대 앞 정류소의 경유노선을 교집합해 갈아타지 않는 버스를 찾습니다.
+ * 노선 전체 경로 데이터가 없어도 "몇 번 버스를 어디서 타고 어디서 내리는지"는 알 수 있습니다.
+ */
+const CITY_BUS_CACHE_MS = 12 * 60 * 60 * 1000;
+
+function readCityBusCache(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || Date.now() - parsed.at > CITY_BUS_CACHE_MS) return null;
+    return parsed.routes;
+  } catch { return null; }
+}
+
+function writeCityBusCache(key, routes) {
+  try { sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), routes })); } catch {}
+}
+
+async function buildCityBusPlan() {
+  if (!state.cityBusEnabled || !state.user || !state.destination) return null;
+
+  const campusCenter = [
+    (CAMPUS_BOUNDS[0][0] + CAMPUS_BOUNDS[1][0]) / 2,
+    (CAMPUS_BOUNDS[0][1] + CAMPUS_BOUNDS[1][1]) / 2
+  ];
+  if (haversine(state.user, campusCenter) < OFF_CAMPUS_METERS) return null;
+
+  const gateway = CAMPUS_GATEWAY_COORD;
+  // 정류소·경유노선은 거의 바뀌지 않습니다. 출발지를 약 100m 격자로 반올림해 브라우저에
+  // 캐시해 두면, 같은 근방에서 다시 검색할 때 서버(및 공개 API 호출)를 건드리지 않습니다.
+  const cacheKey = `cambus.citybus.${state.user[0].toFixed(3)},${state.user[1].toFixed(3)}`;
+  let candidates = readCityBusCache(cacheKey);
+  if (!candidates) {
+    try {
+      const query = new URLSearchParams({
+        fromLat: state.user[0], fromLng: state.user[1],
+        toLat: gateway[0], toLng: gateway[1]
+      });
+      const response = await fetchWithTimeout(`${API_BASE}/api/city-bus/direct?${query}`, {}, 9000);
+      if (!response.ok) return null;
+      candidates = (await response.json()).routes || [];
+      writeCityBusCache(cacheKey, candidates);
+    } catch (error) {
+      console.warn('City bus lookup failed', error);
+      return null;
+    }
+  }
+  if (!candidates.length) return null;
+
+  let best = null;
+  for (const candidate of candidates.slice(0, 3)) {
+    const walkIn = await footRoute(state.user, candidate.board.coord);
+    if (!walkIn.ok) continue;
+    const lastLeg = await campusLegFrom(candidate.alight.coord, state.destination);
+    if (!lastLeg) continue;
+    const total = walkIn.duration + candidate.rideSeconds + lastLeg.seconds;
+    if (!best || total < best.total) best = { candidate, walkIn, lastLeg, total };
+  }
+  if (!best) return null;
+
+  const { candidate, walkIn, lastLeg } = best;
+  const routeLabel = candidate.routeNos.slice(0, 3).join(', ');
+
+  return {
+    type: 'city-bus',
+    duration: best.total,
+    distance: walkIn.distance + (lastLeg.walkDistance || 0),
+    routeNos: candidate.routeNos,
+    cityBoard: candidate.board,
+    cityAlight: candidate.alight,
+    ride: candidate.rideSeconds,
+    walkIn,
+    campusLeg: lastLeg,
+    title: `시내버스 ${routeLabel}`,
+    steps: [
+      `${candidate.board.name}까지 도보 ${mToText(walkIn.distance)}`,
+      `${routeLabel}번 ${candidate.board.name} 승차 → ${candidate.alight.name} 하차`,
+      ...lastLeg.steps
+    ]
+  };
+}
+
+/** 영남대역 등 캠퍼스 관문에서 목적지까지 — 도보와 교내버스 중 빠른 쪽을 고릅니다. */
+async function campusLegFrom(fromCoord, destination) {
+  const walk = await footRoute(fromCoord, destination);
+  let best = walk.ok
+    ? { seconds: walk.duration, walkDistance: walk.distance, kind: 'walk', steps: [`목적지까지 도보 ${mToText(walk.distance)}`] }
+    : null;
+
+  for (const routeId of ['r1', 'r2']) {
+    const route = ROUTES[routeId], model = state.routeModels[routeId];
+    if (!model?.ok) continue;
+    const entries = serviceStopEntries(route.stops);
+    for (const { stop: bs, index: bi } of entries) {
+      const toStop = haversine(fromCoord, bs.coord);
+      if (toStop > 500) continue;              // 관문에서 걸어갈 만한 정류장만
+      for (const { stop: as, index: ai } of entries) {
+        const ride = rideSeconds(routeId, bi, ai);
+        if (ride == null) continue;
+        const fromStop = haversine(destination, as.coord);
+        if (fromStop > 600) continue;
+        const seconds = toStop / 1.2 + ride + fromStop / 1.2;
+        if (!best || seconds < best.seconds) {
+          best = {
+            seconds, kind: 'bus', routeId, walkDistance: toStop + fromStop,
+            board: bs, alight: as,
+            steps: [
+              `${bs.name}까지 도보 ${mToText(toStop)}`,
+              `${route.short} ${bs.name} 승차 → ${as.name} 하차`,
+              `목적지까지 도보 ${mToText(fromStop)}`
+            ]
+          };
+        }
+      }
+    }
+  }
+  return best;
+}
+
 async function planRoutes() {
   if (window.YUAds?.dismissLaunchAd) window.YUAds.dismissLaunchAd();
   const startInput = document.getElementById('startInput').value.trim();
@@ -1309,7 +1569,7 @@ async function planRoutes() {
   document.getElementById('results').innerHTML = '<div class="empty-state"><strong>경로 계산 중…</strong><p>도보 경로와 다음 순환버스를 비교하고 있습니다.</p></div>';
   clearPlanLayers();
 
-  const plans = [];
+  let plans = [];
   const direct = await footRoute(state.user, state.destination);
   if (direct.ok) {
     plans.push({ type: 'walk', duration: direct.duration, distance: direct.distance, geometry: direct.geometry, title: '도보', steps: [`도보 ${mToText(direct.distance)}`] });
@@ -1319,58 +1579,69 @@ async function planRoutes() {
     const route = ROUTES[routeId], model = state.routeModels[routeId];
     if (!model?.ok) continue;
 
-    const boards = serviceStopEntries(route.stops)
-      .map(({ stop: s, index: i }) => ({ s, i, d: haversine(state.user, s.coord) }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 3);
-    const alights = serviceStopEntries(route.stops)
-      .map(({ stop: s, index: i }) => ({ s, i, d: haversine(state.destination, s.coord) }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 3);
-
-    let candidate = null;
-    for (const b of boards) for (const a of alights) {
-      const ride = rideSeconds(routeId, b.i, a.i);
-      if (ride == null) continue;
-      const next = nextArrivalAtStop(routeId, b.i, effectiveNow());
+    // 승·하차 후보를 가까운 3개로 미리 자르면, 같은 역을 두 번 서는 노선에서 정작 가까운 쪽
+    // 정차가 후보에서 빠질 수 있습니다. 구간시간 계산은 네트워크 호출이 없어 값싸므로 모든
+    // 조합을 평가한 뒤, 상위 몇 개만 실제 보행 경로를 구해 진짜 소요시간으로 최종 선택합니다.
+    const stopEntries = serviceStopEntries(route.stops);
+    const rough = [];
+    for (const { stop: bs, index: bi } of stopEntries) {
+      const next = nextArrivalAtStop(routeId, bi, effectiveNow());
       if (!next) continue;
-      const rough = b.d / 1.35 + next.wait + ride + a.d / 1.35;
-      if (!candidate || rough < candidate.rough) candidate = { b, a, ride, next, rough };
+      const bd = haversine(state.user, bs.coord);
+      for (const { stop: as, index: ai } of stopEntries) {
+        const ride = rideSeconds(routeId, bi, ai);
+        if (ride == null) continue;
+        const ad = haversine(state.destination, as.coord);
+        rough.push({ bs, bi, as, ai, ride, next, score: bd / 1.2 + next.wait + ride + ad / 1.2 });
+      }
     }
-    if (!candidate) continue;
+    if (!rough.length) continue;
+    rough.sort((a, b) => a.score - b.score);
 
-    const walkIn = await footRoute(state.user, candidate.b.s.coord);
-    const walkOut = await footRoute(candidate.a.s.coord, state.destination);
-    if (!walkIn.ok || !walkOut.ok) continue;
+    const verified = await Promise.all(rough.slice(0, BUS_CANDIDATES_TO_VERIFY).map(async cand => {
+      const [walkIn, walkOut] = await Promise.all([
+        footRoute(state.user, cand.bs.coord),
+        footRoute(cand.as.coord, state.destination)
+      ]);
+      if (!walkIn.ok || !walkOut.ok) return null;
+      const next = nextArrivalAtStop(routeId, cand.bi, effectiveNow());
+      if (!next) return null;
+      return { ...cand, walkIn, walkOut, next, total: walkIn.duration + next.wait + cand.ride + walkOut.duration };
+    }));
+    let best = null;
+    for (const cand of verified) if (cand && (!best || cand.total < best.total)) best = cand;
+    if (!best) continue;
 
-    const next = nextArrivalAtStop(routeId, candidate.b.i, effectiveNow());
-    if (!next) continue;
-    const total = walkIn.duration + next.wait + candidate.ride + walkOut.duration;
     plans.push({
       type: 'bus',
       routeId,
-      duration: total,
-      distance: walkIn.distance + walkOut.distance,
-      board: candidate.b.s,
-      alight: candidate.a.s,
-      boardIdx: candidate.b.i,
-      alightIdx: candidate.a.i,
-      legIndices: routeLegIndices(route.stops.length, candidate.b.i, candidate.a.i),
-      walkIn,
-      walkOut,
-      wait: next.wait,
-      ride: candidate.ride,
-      busArrival: next.arrival,
-      baseDeparture: next.departure,
+      duration: best.total,
+      distance: best.walkIn.distance + best.walkOut.distance,
+      board: best.bs,
+      alight: best.as,
+      boardIdx: best.bi,
+      alightIdx: best.ai,
+      legIndices: routeLegIndices(route.stops.length, best.bi, best.ai),
+      walkIn: best.walkIn,
+      walkOut: best.walkOut,
+      wait: best.next.wait,
+      ride: best.ride,
+      busArrival: best.next.arrival,
+      baseDeparture: best.next.departure,
       title: `${route.short} 이용`,
       steps: [
-        `${candidate.b.s.name}까지 도보 ${mToText(walkIn.distance)}`,
-        `${timeText(next.arrival)}경 승차 · 예상 대기 ${secToMin(next.wait)}분`,
-        `${candidate.a.s.name} 하차 · 버스 약 ${secToMin(candidate.ride)}분`,
-        `목적지까지 도보 ${mToText(walkOut.distance)}`
+        `${best.bs.name}까지 도보 ${mToText(best.walkIn.distance)}`,
+        `${timeText(best.next.arrival)}경 승차 · 예상 대기 ${secToMin(best.next.wait)}분`,
+        `${best.as.name} 하차 · 버스 약 ${secToMin(best.ride)}분`,
+        `목적지까지 도보 ${mToText(best.walkOut.distance)}`
       ]
     });
   }
+
+  const offCampus = await buildOffCampusPlan();
+  if (offCampus) plans.push(offCampus);
+  const cityBus = await buildCityBusPlan();
+  if (cityBus) plans.push(cityBus);
 
   for (const station of TRANSFER_STATIONS) {
     for (const first of station.members) {
@@ -1382,11 +1653,92 @@ async function planRoutes() {
     }
   }
 
+  // 캠퍼스 밖에서 출발하면 "18km 걷기" 같은 후보가 산술적으로는 만들어집니다.
+  // 아무도 택하지 않을 경로는 결과에서 빼서 카카오맵처럼 현실적인 것만 남깁니다.
+  // 도보 3km 초과 경로는 아무도 택하지 않으므로 항상 제외합니다.
+  plans = plans.filter(p => p.type !== 'walk' || p.distance <= MAX_WALK_ONLY_METERS);
+  // 정류장 접근 도보가 과한 경로도 뺍니다. 단, 전부 걸러지면 그나마 나은 걸 남깁니다.
+  const reachable = plans.filter(p => ((p.walkIn?.distance ?? 0) + (p.walkOut?.distance ?? 0)) <= MAX_ACCESS_WALK_METERS);
+  if (reachable.length) plans = reachable;
+
   plans.sort((a, b) => a.duration - b.duration);
   trackMetric('route_search', { destination: state.destinationName || destinationInput || '' });
   renderPlans(plans);
   if (plans[0]) drawPlan(plans[0]);
   document.getElementById('routeBtn').disabled = false;
+}
+
+// 카카오맵처럼 "도보 3분 › 2노선 5분 › 도보 1분" 한 줄로 경로 구성을 먼저 보여줍니다.
+// 각 구간의 소요시간 비율대로 막대 폭을 나눠, 뭘 오래 타는지 한눈에 들어오게 합니다.
+const SUBWAY_BAR_COLOR = '#17191c';   // 지하철 = 검정
+const CITY_BUS_BAR_COLOR = '#8a8f96'; // 시내버스 = 회색
+
+function planSegments(plan) {
+  const walk = seconds => ({ kind: 'walk', seconds, label: '도보' });
+  if (plan.type === 'walk') return [walk(plan.duration)];
+
+  if (plan.type === 'offcampus') {
+    const segments = [walk(plan.walkIn?.duration || 0)];
+    for (const s of plan.subwayRide.segments) {
+      segments.push({ kind: 'subway', seconds: s.seconds || (plan.subwayRide.seconds / plan.subwayRide.segments.length), label: `${s.ref}호선`, color: SUBWAY_BAR_COLOR });
+    }
+    const leg = plan.campusLeg;
+    if (leg?.kind === 'bus') {
+      const route = ROUTES[leg.routeId];
+      segments.push({ kind: 'bus', seconds: leg.seconds, label: route.short, color: route.color });
+    } else if (leg) {
+      segments.push(walk(leg.seconds));
+    }
+    return segments;
+  }
+
+  if (plan.type === 'city-bus') {
+    return [
+      walk(plan.walkIn?.duration || 0),
+      { kind: 'city-bus', seconds: plan.ride || 0, label: '시내버스', color: CITY_BUS_BAR_COLOR },
+      walk(plan.walkOut?.duration || 0)
+    ];
+  }
+
+  if (plan.type === 'bus-transfer') {
+    const first = ROUTES[plan.firstRouteId];
+    const second = ROUTES[plan.secondRouteId];
+    const ride = plan.ride || 0;
+    return [
+      walk(plan.walkIn?.duration || 0),
+      { kind: 'bus', seconds: ride / 2, label: first.short, color: first.color },
+      { kind: 'bus', seconds: ride / 2, label: second.short, color: second.color },
+      walk(plan.walkOut?.duration || 0)
+    ];
+  }
+
+  const route = ROUTES[plan.routeId];
+  return [
+    walk(plan.walkIn?.duration || 0),
+    { kind: 'bus', seconds: plan.ride || 0, label: route.short, color: route.color },
+    walk(plan.walkOut?.duration || 0)
+  ];
+}
+
+function planSummaryHtml(plan) {
+  const segments = planSegments(plan).filter(s => s.seconds > 20);
+  if (!segments.length) return '';
+  const total = segments.reduce((sum, s) => sum + s.seconds, 0) || 1;
+
+  const bar = segments.map(s => {
+    const width = Math.max(8, Math.round((s.seconds / total) * 100));
+    const style = s.color
+      ? `width:${width}%;background:${s.color}`
+      : `width:${width}%`;
+    return `<span class="seg seg-${s.kind}" style="${style}"></span>`;
+  }).join('');
+
+  const chips = segments.map(s => s.color
+    ? `<span class="chip-seg" style="background:${s.color}">${escapeHtml(s.label)}</span><span class="chip-min">${secToMin(s.seconds)}분</span>`
+    : `<span class="chip-seg walk">도보</span><span class="chip-min">${secToMin(s.seconds)}분</span>`
+  ).join('<span class="chip-arrow">›</span>');
+
+  return `<div class="plan-bar">${bar}</div><div class="plan-line">${chips}</div>`;
 }
 
 function renderPlans(plans) {
@@ -1401,13 +1753,15 @@ function renderPlans(plans) {
       : p.type === 'bus'
         ? `<span class="badge ${p.routeId}">${ROUTES[p.routeId].short}</span>`
         : p.type === 'bus-transfer'
-          ? `<span class="badge transfer">🔄 ${ROUTES[p.firstRouteId].short}→${ROUTES[p.secondRouteId].short}</span>`
+          ? `<span class="badge transfer">🔄 환승</span>`
           : '<span class="badge">도보</span>';
     const meta = p.type === 'walk'
       ? `${mToText(p.distance)} · OSM 보행 경로`
+      : p.type === 'offcampus'
+        ? `${escapeHtml(p.subwayBoard?.name || '')}역 승차 · 영남대역 하차${p.subwayRide?.transfers ? ` · 환승 ${p.subwayRide.transfers}회` : ''}`
       : p.type === 'bus-transfer'
-        ? `도보 ${mToText(p.distance)} + 순환버스 환승 1회 · ${p.baseDeparture} 기준 출발편`
-        : `도보 ${mToText(p.distance)} + 순환버스 · ${p.baseDeparture} 기준 출발편`;
+        ? `${escapeHtml(p.board?.name || '')} 승차 · ${escapeHtml(p.transferStationName || '')} 환승 · ${p.baseDeparture} 출발편`
+        : `${escapeHtml(p.board?.name || '')} 승차 · ${escapeHtml(p.alight?.name || '')} 하차 · ${p.baseDeparture} 출발편`;
     const crowding = p.type === 'bus'
       ? `<div class="crowding-meta" data-crowding-key="${p.routeId}|${tripKey(p.routeId, p.baseDeparture)}"><span class="crowding-dot"></span><span class="crowding-text">혼잡도 확인 중</span></div>`
       : '';
@@ -1415,8 +1769,14 @@ function renderPlans(plans) {
       ? `<button class="guide-btn" data-guide="${i}">승·하차 알림 시작</button>`
       : '';
     return `<article class="route-card ${i === 0 ? 'best' : ''}" data-plan="${i}">
-      <div class="route-card-head"><div><h3>${escapeHtml(p.title)}</h3><div class="route-meta">${escapeHtml(meta)}</div></div><div style="text-align:right">${badge}<div class="route-time">${secToMin(p.duration)}분</div></div></div>
-      <ol class="route-steps">${p.steps.map((s, j) => `<li><span class="step-icon">${j + 1}</span><span>${escapeHtml(s)}</span></li>`).join('')}</ol>
+      <div class="route-card-head">
+        <div class="route-card-title"><h3>${escapeHtml(p.title)}</h3><div class="route-meta">${meta}</div></div>
+        <div class="route-card-time">${badge}<div class="route-time">${durationText(p.duration)}</div></div>
+      </div>
+      ${planSummaryHtml(p)}
+      <details class="route-detail"><summary>상세 경로</summary>
+        <ol class="route-steps">${p.steps.map((s, j) => `<li><span class="step-icon">${j + 1}</span><span>${escapeHtml(s)}</span></li>`).join('')}</ol>
+      </details>
       ${crowding}
       ${guideButton}
     </article>`;
@@ -1442,6 +1802,30 @@ function drawPlan(plan) {
     map.fitBounds(l.getBounds(), { padding: [70, 70] });
     return;
   }
+  // 캠퍼스 밖 출발 경로: 지하철/시내버스 구간은 선을 그리지 않고 승·하차 지점만 안내합니다.
+  // 지도에는 캠퍼스 안 구간만 그리고 목적지 주변으로 맞춥니다.
+  if (plan.type === 'offcampus') {
+    const leg = plan.campusLeg;
+    const layers = [];
+    if (leg?.kind === 'bus') {
+      const model = state.routeModels[leg.routeId];
+      const route = ROUTES[leg.routeId];
+      const indices = routeLegIndices(route.stops.length, route.stops.indexOf(leg.board), route.stops.indexOf(leg.alight));
+      const coords = [];
+      for (const i of indices) coords.push(...(model?.legs[i]?.coords || []));
+      if (coords.length > 1) {
+        const line = L.polyline(coords, { color: route.color, weight: 8, opacity: .9 }).addTo(map);
+        layers.push(line);
+      }
+    }
+    const marker = L.circleMarker(state.destination, { radius: 8, color: '#17191c', weight: 3, fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+    layers.push(marker);
+    state.planLayers.push(...layers);
+    map.fitBounds(L.featureGroup(layers).getBounds(), { padding: [70, 70] });
+    return;
+  }
+
+  if (!plan.walkIn?.geometry || !plan.walkOut?.geometry) return;
   const a = L.polyline(plan.walkIn.geometry, { color: '#333', weight: 5, opacity: .75, dashArray: '3 8' }).addTo(map);
   const b = L.polyline(plan.walkOut.geometry, { color: '#333', weight: 5, opacity: .75, dashArray: '3 8' }).addTo(map);
   state.planLayers.push(a, b);
@@ -1549,9 +1933,14 @@ function nearestGuidanceStopIndex(g, coord) {
 function renderGuidance() {
   const g = state.activeGuidance;
   const bar = document.getElementById('guidanceBar');
-  if (!g) { bar.hidden = true; return; }
+  if (!g) {
+    bar.hidden = true;
+    document.body.classList.remove('guiding');
+    return;
+  }
 
   bar.hidden = false;
+  document.body.classList.add('guiding');
   const title = document.getElementById('guidanceTitle');
   const detail = document.getElementById('guidanceDetail');
   const icon = document.getElementById('guidanceIcon');
@@ -1563,17 +1952,32 @@ function renderGuidance() {
   icon.style.background = route.color;
   if (shareBtn) {
     shareBtn.hidden = g.stage !== 'riding';
-    shareBtn.textContent = g.shareRideTelemetry ? '위치공유 ON' : '위치공유 OFF';
+    shareBtn.textContent = '위치 공유';
+    shareBtn.setAttribute('aria-pressed', g.shareRideTelemetry ? 'true' : 'false');
+    shareBtn.setAttribute('aria-label', g.shareRideTelemetry ? '위치 공유 켜짐' : '위치 공유 꺼짐');
     shareBtn.classList.toggle('share-on', Boolean(g.shareRideTelemetry));
   }
   if (crowdBtn) crowdBtn.hidden = g.stage !== 'riding';
 
   const current = state.user || g.startedAtCoord;
+  const progressBar = document.getElementById('guidanceProgress');
+  if (progressBar) {
+    const totalLegs = routeLegIndices(route.stops.length, g.plan.boardIdx, g.plan.alightIdx).length;
+    let ratio = 0;
+    if (g.stage === 'riding' && totalLegs > 0) {
+      const left = current ? remainingStopCount(g, current) : totalLegs;
+      ratio = Math.max(0, Math.min(1, (totalLegs - (left ?? totalLegs)) / totalLegs));
+    }
+    progressBar.style.width = `${Math.round(ratio * 100)}%`;
+    progressBar.style.background = route.color;
+  }
+
   if (g.stage === 'to_board' || g.stage === 'waiting') {
     const distance = current ? haversine(current, g.plan.board.coord) : null;
     title.textContent = g.stage === 'waiting' ? `${g.plan.board.name}에서 탑승 대기` : `${g.plan.board.name}으로 이동`;
     const dText = distance == null ? '' : `정류장까지 ${mToText(distance)} · `;
-    detail.textContent = `${dText}${route.short} ${guidanceNextBusText(g)}`;
+    const moving = g.speed >= RIDE_SPEED_MPS ? ' · 이동 중' : '';
+    detail.textContent = `${dText}${route.short} ${guidanceNextBusText(g)}${moving}`;
     stageBtn.hidden = false;
     stageBtn.textContent = '탑승했어요';
   } else if (g.stage === 'riding') {
@@ -1581,7 +1985,12 @@ function renderGuidance() {
     const nearestIdx = current ? nearestGuidanceStopIndex(g, current) : g.plan.boardIdx;
     const remaining = routeLegIndices(route.stops.length, nearestIdx, g.plan.alightIdx).length;
     title.textContent = `${g.plan.alight.name}에서 하차`;
-    detail.textContent = `${remaining > 0 ? `${remaining}개 정류장 남음 · ` : ''}${distance == null ? '' : `하차 지점까지 약 ${mToText(distance)}`}`;
+    const parts = [];
+    if (remaining > 0) parts.push(`${remaining}개 정류장 남음`);
+    if (distance != null) parts.push(`약 ${mToText(distance)}`);
+    if (g.speed > 1 && distance != null) parts.push(`${Math.max(1, Math.round(distance / g.speed / 60))}분 예상`);
+    else if (g.speed <= STOPPED_SPEED_MPS && g.speedSamples.length) parts.push('정차 중');
+    detail.textContent = parts.join(' · ');
     stageBtn.hidden = false;
     stageBtn.textContent = '하차 완료';
   }
@@ -1600,35 +2009,112 @@ function refreshGuidanceAlerts() {
   }
 }
 
+// 기기가 speed 를 주면 그대로 쓰고, 없으면 직전 측정과의 거리/시간으로 구한다.
+// GPS 는 튀기 때문에 최근 몇 개를 평균 내 쓴다.
+function updateGuidanceSpeed(g, coord, timestamp, reportedSpeed) {
+  const previous = g.lastFix;
+  g.lastFix = { coord, t: timestamp };
+
+  let speed = Number.isFinite(reportedSpeed) && reportedSpeed >= 0 ? reportedSpeed : null;
+  if (speed == null && previous) {
+    const seconds = (timestamp - previous.t) / 1000;
+    if (seconds > 0.5 && seconds < 60) speed = haversine(coord, previous.coord) / seconds;
+  }
+  if (speed == null || !Number.isFinite(speed)) return g.speed;
+
+  if (speed > MAX_PLAUSIBLE_SPEED_MPS) return g.speed;   // 좌표가 튄 것 - 표본에 넣지 않는다
+  g.speedSamples.push(speed);
+  if (g.speedSamples.length > SPEED_WINDOW) g.speedSamples.shift();
+  g.speed = g.speedSamples.reduce((sum, v) => sum + v, 0) / g.speedSamples.length;
+  return g.speed;
+}
+
+function remainingStopCount(g, coord) {
+  const route = ROUTES[g.plan.routeId];
+  if (!route || !coord) return null;
+  const nearestIdx = nearestGuidanceStopIndex(g, coord);
+  return routeLegIndices(route.stops.length, nearestIdx, g.plan.alightIdx).length;
+}
+
+function enterRidingStage(auto) {
+  const g = state.activeGuidance;
+  if (!g || g.stage === 'riding') return;
+  g.stage = 'riding';
+  g.flags.alightSoon = false;
+  g.flags.alightNow = false;
+  g.flags.passedAlight = false;
+  g.minAlightDist = null;
+  trackMetric('ride_boarded', { routeId: g.plan.routeId, auto: Boolean(auto) });
+  renderGuidance();
+}
+
 function processGuidancePosition(position) {
   const g = state.activeGuidance;
   if (!g) return;
   const coord = [position.coords.latitude, position.coords.longitude];
-  setUserLocation(coord, position.coords.accuracy, false);
+  const accuracy = position.coords.accuracy;
+  setUserLocation(coord, accuracy, false);
 
-  if (g.stage === 'to_board') {
-    const dist = haversine(coord, g.plan.board.coord);
-    if (dist <= BOARD_NEAR_METERS && !g.flags.boardNear) {
+  const speed = updateGuidanceSpeed(g, coord, position.timestamp || Date.now(), position.coords.speed);
+  // 부정확한 측정으로 단계를 넘기면 엉뚱한 알림이 가므로, 안내 문구만 갱신하고 판정은 미룬다.
+  const reliable = !Number.isFinite(accuracy) || accuracy <= GPS_MAX_ACCURACY_METERS;
+  const boardDist = haversine(coord, g.plan.board.coord);
+  const alightDist = haversine(coord, g.plan.alight.coord);
+
+  if (g.stage === 'to_board' || g.stage === 'waiting') {
+    if (reliable && boardDist <= BOARD_NEAR_METERS && !g.flags.boardNear) {
       g.flags.boardNear = true;
-      guidanceNotify('승차 정류장이 가까워요', `${g.plan.board.name}까지 약 ${mToText(dist)} 남았습니다.`);
+      guidanceNotify('승차 정류장이 가까워요', `${g.plan.board.name}까지 약 ${mToText(boardDist)} 남았습니다.`);
     }
-    if (dist <= BOARD_AT_STOP_METERS && !g.flags.atBoard) {
+    if (reliable && boardDist <= BOARD_AT_STOP_METERS && !g.flags.atBoard) {
       g.flags.atBoard = true;
       g.stage = 'waiting';
       guidanceNotify('승차 정류장 도착', `${ROUTES[g.plan.routeId].short} 탑승 위치입니다. 차량 노선을 확인하세요.`);
     }
-  } else if (g.stage === 'riding') {
-    sendRideTelemetry(coord, position.coords.accuracy);
-    const dist = haversine(coord, g.plan.alight.coord);
-    if (dist <= ALIGHT_SOON_METERS && !g.flags.alightSoon) {
-      g.flags.alightSoon = true;
-      guidanceNotify('하차 정류장이 가까워요', `${g.plan.alight.name}까지 약 ${mToText(dist)} 남았습니다.`);
+
+    // 자동 탑승 감지: 정류장에 닿은 적이 있고, 차량 속도가 연속으로 나오며, 정류장에서 멀어질 때.
+    if (reliable && g.flags.boardNear) {
+      g.fastSamples = speed >= RIDE_SPEED_MPS ? (g.fastSamples || 0) + 1 : 0;
+      const leavingStop = g.lastBoardDist != null && boardDist > g.lastBoardDist + 5;
+      if (g.fastSamples >= RIDE_CONFIRM_SAMPLES && leavingStop && boardDist > BOARD_AT_STOP_METERS) {
+        enterRidingStage(true);
+        guidanceNotify('탑승을 감지했습니다', `${g.plan.alight.name} 하차 전에 알려드릴게요.`);
+      }
     }
-    if (dist <= ALIGHT_NOW_METERS && !g.flags.alightNow) {
+  } else if (g.stage === 'riding') {
+    sendRideTelemetry(coord, accuracy);
+    g.minAlightDist = g.minAlightDist == null ? alightDist : Math.min(g.minAlightDist, alightDist);
+    const etaSeconds = speed > 1 ? alightDist / speed : null;
+    const remaining = remainingStopCount(g, coord);
+    // 캠퍼스는 정류장 간격이 200~300m 라 거리만 보면 탑승하자마자 예고가 뜬다.
+    // 다음 정차가 하차 정류장일 때(남은 정류장 <= 1)만 예고한다.
+    const nextIsAlight = remaining != null && remaining <= 1;
+    const leftBoard = boardDist > BOARD_AT_STOP_METERS;
+
+    if (reliable && !g.flags.alightSoon && leftBoard && nextIsAlight &&
+        (alightDist <= ALIGHT_SOON_METERS || (etaSeconds != null && etaSeconds <= ALIGHT_SOON_SECONDS))) {
+      g.flags.alightSoon = true;
+      const when = etaSeconds != null ? ` 약 ${Math.max(1, Math.round(etaSeconds / 60))}분 후` : '';
+      guidanceNotify('하차 정류장이 가까워요', `${g.plan.alight.name}까지 약 ${mToText(alightDist)}${when} 입니다.`);
+    }
+    if (reliable && leftBoard && alightDist <= ALIGHT_NOW_METERS && !g.flags.alightNow) {
       g.flags.alightNow = true;
       guidanceNotify('곧 하차하세요', `${g.plan.alight.name}에 접근 중입니다. 하차를 준비하세요.`, true);
     }
+    // 하차 지점 근처에서 차가 섰다면 지금이 내릴 때다.
+    if (reliable && leftBoard && alightDist <= ALIGHT_NOW_METERS && speed <= STOPPED_SPEED_MPS && !g.flags.alightStopped) {
+      g.flags.alightStopped = true;
+      guidanceNotify('지금 내리세요', `${g.plan.alight.name}에 정차했습니다.`, true);
+    }
+    // 최근접 이후 다시 멀어지면 지나친 것으로 본다.
+    if (reliable && !g.flags.passedAlight && g.minAlightDist != null &&
+        g.minAlightDist <= ALIGHT_NOW_METERS && alightDist > g.minAlightDist + PASSED_STOP_METERS) {
+      g.flags.passedAlight = true;
+      guidanceNotify('하차 정류장을 지났습니다', `${g.plan.alight.name}에서 내리지 못했습니다. 다음 정류장에서 내려 주세요.`, true);
+    }
   }
+
+  g.lastBoardDist = boardDist;
   refreshGuidanceAlerts();
 }
 
@@ -1641,7 +2127,13 @@ async function startGuidance(plan) {
     stage: 'to_board',
     startedAt: new Date(),
     startedAtCoord: state.user,
-    flags: { boardNear: false, atBoard: false, busSoon: false, alightSoon: false, alightNow: false },
+    flags: { boardNear: false, atBoard: false, busSoon: false, alightSoon: false, alightNow: false, alightStopped: false, passedAlight: false },
+    speed: 0,
+    speedSamples: [],
+    fastSamples: 0,
+    lastFix: null,
+    lastBoardDist: null,
+    minAlightDist: null,
     shareRideTelemetry: false,
     riderToken: null,
     reportToken: null,
@@ -1656,7 +2148,8 @@ async function startGuidance(plan) {
     state.geoWatchId = navigator.geolocation.watchPosition(
       processGuidancePosition,
       err => console.warn('Guidance geolocation error', err),
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 4000 }
+      // 속도 판정을 하려면 최신 측정이 필요하므로 캐시된 좌표를 쓰지 않는다.
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }
   state.guidanceTimer = setInterval(refreshGuidanceAlerts, 10000);
@@ -1672,12 +2165,8 @@ function markGuidanceStage() {
   const g = state.activeGuidance;
   if (!g) return;
   if (g.stage === 'to_board' || g.stage === 'waiting') {
-    g.stage = 'riding';
-    trackMetric('ride_boarded', { routeId: g.plan.routeId });
-    g.flags.alightSoon = false;
-    g.flags.alightNow = false;
+    enterRidingStage(false);
     guidanceNotify('탑승 안내', `${ROUTES[g.plan.routeId].short} 탑승으로 전환했습니다. ${g.plan.alight.name} 하차 전에 알려드릴게요.`);
-    renderGuidance();
     setTimeout(() => document.getElementById('crowdConsentDialog')?.showModal(), 250);
     return;
   }
@@ -1751,7 +2240,7 @@ function departureTimeToast(departureAt) {
   if (departureAt < effective) return `조정 시간표는 ${EFFECTIVE_DATE}부터 적용됩니다 · 그 전에는 도보 경로만 표시됩니다.`;
   return `${timeText(departureAt)} 출발 기준으로 검색합니다.`;
 }
-document.getElementById('fitCampusBtn').addEventListener('click', () => map.fitBounds(CAMPUS_BOUNDS, { padding: [30, 30] }));
+document.getElementById('fitCampusBtn')?.addEventListener('click', () => map.fitBounds(CAMPUS_BOUNDS, { padding: [30, 30] }));
 document.getElementById('zoomInBtn').addEventListener('click', () => map.zoomIn());
 document.getElementById('zoomOutBtn').addEventListener('click', () => map.zoomOut());
 function setPickingPoint(type) {
@@ -1799,6 +2288,18 @@ document.getElementById('destinationInput').addEventListener('keydown', e => {
     }
   }
 });
+// 팝업은 열릴 때마다 새로 그려지므로 문서 단위로 위임 처리합니다.
+document.addEventListener('click', event => {
+  const btn = event.target.closest?.('.popup-route-btn');
+  if (!btn) return;
+  const coord = [Number(btn.dataset.lat), Number(btn.dataset.lng)];
+  if (!coord.every(Number.isFinite)) return;
+  setDestination(coord, btn.dataset.name || '선택한 정류장');
+  map.closePopup();
+  sidePanel.classList.add('open');
+  planRoutes();
+});
+
 map.on('click', e => {
   const type = state.pickingPoint;
   if (!type) return;
@@ -1839,10 +2340,13 @@ map.on('zoomend', () => {
   updateBuses();
 });
 
+// 배차표는 노선 안내 다이얼로그로 합쳐졌다. 별도 배차표 창이 남아 있을 때만 연결한다.
 const dialog = document.getElementById('timetableDialog');
-document.getElementById('timetableBtn').addEventListener('click', () => dialog.showModal());
-document.getElementById('closeTimetable').addEventListener('click', () => dialog.close());
-dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+if (dialog) {
+  document.getElementById('timetableBtn')?.addEventListener('click', () => dialog.showModal());
+  document.getElementById('closeTimetable')?.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+}
 
 const guideDialog = document.getElementById('guideDialog');
 if (guideDialog) {
@@ -1861,9 +2365,8 @@ const crowdingDialog = document.getElementById('crowdingDialog');
 document.getElementById('closeCrowding')?.addEventListener('click', () => crowdingDialog.close());
 document.querySelectorAll('[data-crowding]').forEach(btn => btn.addEventListener('click', () => submitCrowding(btn.dataset.crowding)));
 
-document.getElementById('mobilePanelBtn').addEventListener('click', () => sidePanel.classList.add('open'));
-document.getElementById('collapsePanel').addEventListener('click', () => sidePanel.classList.remove('open'));
-document.querySelector('.brand-row').addEventListener('click', () => { if (innerWidth <= 720) sidePanel.classList.toggle('open'); });
+document.getElementById('mobilePanelBtn')?.addEventListener('click', () => sidePanel.classList.add('open'));
+document.getElementById('collapsePanel')?.addEventListener('click', () => sidePanel.classList.remove('open'));
 
 async function bootMap() {
   await loadRouteStopOverrides();
@@ -1881,7 +2384,11 @@ async function bootMap() {
   }
   // 로컬 개발/자동 캡처용 핸들. 운영 도메인에서는 노출하지 않습니다.
   if (['localhost', '127.0.0.1', '::1'].includes(location.hostname)) {
-    window.__cambusDebug = { map, state, ROUTES, predictedPoint, nowClock };
+    window.__cambusDebug = {
+      map, state, ROUTES, predictedPoint, nowClock,
+      haversine, rideSeconds, nextArrivalAtStop, effectiveNow, footRoute, planRoutes,
+      processGuidancePosition, planSegments
+    };
   }
 }
 bootMap().catch(error => {

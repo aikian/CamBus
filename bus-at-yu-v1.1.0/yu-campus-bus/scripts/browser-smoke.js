@@ -193,6 +193,12 @@ main().catch(error => {
   await delay(150);
   const resolvedProfile = path.resolve(profile);
   if (resolvedProfile.startsWith(path.resolve(os.tmpdir()) + path.sep) && path.basename(resolvedProfile).startsWith('cambus-smoke-')) {
-    fs.rmSync(resolvedProfile, { recursive: true, force: true });
+    // 윈도우에서는 크롬이 프로필 파일을 잠깐 더 물고 있어 삭제가 실패할 수 있습니다.
+    // 임시 디렉터리 청소 실패가 테스트 결과를 덮어쓰지 않도록 무시합니다.
+    try {
+      fs.rmSync(resolvedProfile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    } catch (cleanupError) {
+      console.warn(`temp profile cleanup skipped: ${cleanupError.code || cleanupError.message}`);
+    }
   }
 });

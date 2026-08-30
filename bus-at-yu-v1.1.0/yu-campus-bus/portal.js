@@ -316,6 +316,35 @@
     if (visitorNote) visitorNote.textContent = '익명 브라우저 기준 고유 사용자 수 · 기기/브라우저 변경 시 별도 집계';
   }
 
+  // 광고 문의 메일 주소 복사. navigator.clipboard는 HTTPS/localhost에서만 동작하므로,
+  // 안 되는 환경에서는 주소 전체를 선택 상태로 만들어 사용자가 바로 복사할 수 있게 합니다.
+  function setUpContactCopy() {
+    const button = document.getElementById('copyContactEmail');
+    const email = document.getElementById('contactEmail');
+    if (!button || !email) return;
+    button.addEventListener('click', async () => {
+      const text = email.textContent.trim();
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(email);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      button.textContent = copied ? '복사됨' : '선택됨';
+      button.classList.toggle('copied', copied);
+      clearTimeout(button.__resetTimer);
+      button.__resetTimer = setTimeout(() => {
+        button.textContent = '복사';
+        button.classList.remove('copied');
+      }, 1600);
+    });
+  }
+
   async function registerVisit() {
     try {
       const response = await fetch('/api/visit', {
@@ -342,6 +371,7 @@
   refresh?.addEventListener('click', () => Promise.all([loadFeed(), refreshStats()]));
 
   setPage(pageFromHash());
+  setUpContactCopy();
   loadFeed();
   registerVisit();
 

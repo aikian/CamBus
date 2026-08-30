@@ -11,10 +11,16 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const transitApi = require('./transit-api');
 
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'data');
+// 배포에서는 마운트한 영구 디스크를 가리키게 한다. 방문자 통계와 편집기 저장분이
+// 재배포마다 사라지면 안 되기 때문이다. 미지정이면 기존처럼 프로젝트 안의 data/ 를 쓴다.
+const BUNDLED_DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = process.env.CAMBUS_DATA_DIR
+  ? path.resolve(process.env.CAMBUS_DATA_DIR)
+  : BUNDLED_DATA_DIR;
 const PORTAL_FEED_FILE = path.join(DATA_DIR, 'portal-feed.json');
 const PORTAL_AUTO_FILE = path.join(DATA_DIR, 'portal-auto.json');
 const LOCAL_ADS_FILE = path.join(DATA_DIR, 'local-ads.json');
@@ -38,6 +44,17 @@ const crowdReports = new Map();
 const rate = new Map();
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// 빈 볼륨으로 처음 뜰 때는 저장소에 들어 있는 노선/피드 데이터를 한 번 복사해 넣는다.
+// (이게 없으면 route-stops.json 이 없어서 지도가 아예 그려지지 않는다)
+if (DATA_DIR !== BUNDLED_DATA_DIR && fs.existsSync(BUNDLED_DATA_DIR)) {
+  for (const name of fs.readdirSync(BUNDLED_DATA_DIR)) {
+    if (!name.endsWith('.json')) continue;
+    const target = path.join(DATA_DIR, name);
+    if (!fs.existsSync(target)) fs.copyFileSync(path.join(BUNDLED_DATA_DIR, name), target);
+  }
+}
+
 if (!fs.existsSync(PORTAL_FEED_FILE)) fs.writeFileSync(PORTAL_FEED_FILE, '[]\n');
 if (!fs.existsSync(PORTAL_AUTO_FILE)) fs.writeFileSync(PORTAL_AUTO_FILE, '[]\n');
 if (!fs.existsSync(LOCAL_ADS_FILE)) fs.writeFileSync(LOCAL_ADS_FILE, '[]\n');
@@ -565,6 +582,42 @@ async function api(req, res, pathname) {
   }
   if (req.method === 'GET' && pathname === '/api/live-buses') {
     return json(res, 200, { buses: liveBusAggregates() });
+  }
+  // 시내버스(TAGO) 프록시 — 인증키는 서버 환경변수에만 두고 클라이언트로 내려보내지 않습니다.
+  if (req.method === 'GET' && pathname === '/api/city-bus/config') {
+    return json(res, 200, { enabled: transitApi.isConfigured() });
+  }
+  if (req.method === 'GET' && pathname === '/api/city-bus/stops') {
+    const lat = Number(new URL(req.url, 'http://localhost').searchParams.get('lat'));
+    const lng = Number(new URL(req.url, 'http://localhost').searchParams.get('lng'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return json(res, 400, { error: 'bad_coords' });
+    try {
+      return json(res, 200, { stops: await transitApi.nearbyStops(lat, lng) });
+    } catch (error) {
+      return json(res, 502, { error: error.code || 'tago_error', message: error.message });
+    }
+  }
+  if (req.method === 'GET' && pathname === '/api/city-bus/direct') {
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    const fromLat = Number(params.get('fromLat')), fromLng = Number(params.get('fromLng'));
+    const toLat = Number(params.get('toLat')), toLng = Number(params.get('toLng'));
+    if (![fromLat, fromLng, toLat, toLng].every(Number.isFinite)) return json(res, 400, { error: 'bad_coords' });
+    try {
+      return json(res, 200, { routes: await transitApi.directRoutes(fromLat, fromLng, toLat, toLng) });
+    } catch (error) {
+      return json(res, 502, { error: error.code || 'tago_error', message: error.message });
+    }
+  }
+  if (req.method === 'GET' && pathname === '/api/city-bus/arrivals') {
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    const cityCode = params.get('cityCode');
+    const nodeId = params.get('nodeId');
+    if (!cityCode || !nodeId) return json(res, 400, { error: 'missing_params' });
+    try {
+      return json(res, 200, { arrivals: await transitApi.arrivals(cityCode, nodeId) });
+    } catch (error) {
+      return json(res, 502, { error: error.code || 'tago_error', message: error.message });
+    }
   }
   if (req.method === 'GET' && pathname === '/api/crowding') {
     return json(res, 200, { crowding: crowdingAggregates() });

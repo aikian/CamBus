@@ -103,7 +103,8 @@
     "url": "https://portal.yu.ac.kr/sso/login.jsp?type=learningx",
     "source": "영남대학교 포털시스템",
     "order": 60,
-    "enabled": true
+    "enabled": true,
+    "pinned": true
   },
   {
     "id": "utility-student-system",

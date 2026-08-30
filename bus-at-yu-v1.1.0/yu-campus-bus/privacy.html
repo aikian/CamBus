@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>개인정보처리방침 · CamBus</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px 20px 72px; background: #f7f8fa; color: #17191c;
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+      line-height: 1.65;
+    }
+    main { width: min(720px, 100%); margin: 0 auto; }
+    a.back { display: inline-block; margin-bottom: 18px; color: #5c6169; font-size: 13px; font-weight: 700; text-decoration: none; }
+    a.back:hover { color: #17191c; }
+    h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.5px; }
+    .updated { margin: 0 0 26px; color: #777c84; font-size: 12px; }
+    section { margin-bottom: 26px; padding: 16px 18px; background: #fff; border: 1px solid #e6e8eb; border-radius: 14px; }
+    h2 { margin: 0 0 8px; font-size: 15px; }
+    p, li { font-size: 13px; color: #3f444a; }
+    p { margin: 0 0 8px; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin-bottom: 5px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
+    th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid #eceef0; vertical-align: top; }
+    th { color: #777c84; font-size: 11px; font-weight: 700; }
+    .note { color: #777c84; font-size: 12px; }
+    code { background: #f1f3f5; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="./">← CamBus로 돌아가기</a>
+    <h1>개인정보처리방침</h1>
+    <p class="updated">CamBus · 영남대학교 교내 순환버스 안내 서비스</p>
+
+    <section>
+      <h2>1. 수집하지 않는 정보</h2>
+      <p>CamBus는 회원가입이 없으며 <strong>이름, 학번, 전화번호, 이메일, 계정 정보를 일절 수집하지 않습니다.</strong></p>
+    </section>
+
+    <section>
+      <h2>2. 수집하는 정보와 이용 목적</h2>
+      <table>
+        <thead>
+          <tr><th>항목</th><th>목적</th><th>보관</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>익명 방문 식별값</td>
+            <td>일·월 단위 순 사용자 수 집계</td>
+            <td>브라우저가 만든 임의 값을 <strong>SHA-256 해시로만</strong> 저장하며 원본은 서버에 남기지 않습니다.</td>
+          </tr>
+          <tr>
+            <td>위치 정보</td>
+            <td>현재 위치 표시, 길찾기, 승·하차 알림</td>
+            <td><strong>기기 안에서만 처리하며 서버로 보내지 않습니다.</strong> 아래 3항의 위치 공유에 동의한 경우만 예외입니다.</td>
+          </tr>
+          <tr>
+            <td>이용 이벤트</td>
+            <td>길찾기 실행 횟수 등 기능별 사용량 집계</td>
+            <td>개인 식별 정보 없이 횟수만 누적합니다.</td>
+          </tr>
+          <tr>
+            <td>접속 IP</td>
+            <td>과도한 요청 차단(속도 제한)</td>
+            <td>메모리에서만 잠시 사용하며 <strong>파일이나 데이터베이스에 저장하지 않습니다.</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. 탑승 중 위치 공유 (선택)</h2>
+      <p>버스 위치 정확도를 높이기 위해, 탑승 중에만 현재 위치를 익명으로 공유할 수 있습니다.</p>
+      <ul>
+        <li><strong>기본값은 공유 안 함</strong>이며, 이용자가 직접 켜야 전송됩니다.</li>
+        <li>전송된 좌표는 임의로 생성된 일회성 토큰에 연결되며 <strong>약 2분 뒤 서버 메모리에서 자동 삭제</strong>됩니다.</li>
+        <li>혼잡도 신고 역시 임의 토큰 기준이며 일정 시간 후 삭제됩니다.</li>
+        <li>언제든 안내 화면에서 공유를 끌 수 있고, 끄면 즉시 전송이 중단됩니다.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>4. 광고</h2>
+      <p>CamBus는 서비스 운영비 충당을 위해 화면 일부에 광고를 노출합니다.</p>
+      <ul>
+        <li>지역 광고(직접 게재)는 별도의 개인정보를 수집하지 않습니다.</li>
+        <li>외부 광고 네트워크를 사용하는 경우, 해당 사업자가 광고 게재와 성과 측정을 위해 쿠키 및 광고 식별자를 사용할 수 있습니다. 이 처리는 <strong>해당 광고 사업자의 개인정보처리방침</strong>을 따릅니다.</li>
+        <li>EU/EEA 등 동의가 요구되는 지역에서는 동의 관리 도구(CMP)를 통해 동의를 받은 뒤에만 맞춤 광고가 노출됩니다.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. 외부 서비스</h2>
+      <ul>
+        <li><strong>OpenStreetMap</strong> — 지도 타일과 보행 경로 계산에 사용됩니다. 지도 이용 시 해당 서버에 요청이 전달됩니다.</li>
+        <li><strong>영남대학교 공개 게시판</strong> — Picks 화면의 소식은 공개된 공지 목록을 읽어 제목·링크·조회수만 표시합니다. 이용자 정보를 보내지 않습니다.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>6. 이용자의 선택권</h2>
+      <ul>
+        <li>브라우저 설정에서 위치 권한을 언제든 거부하거나 철회할 수 있습니다. 거부해도 지도와 배차표는 그대로 이용할 수 있습니다.</li>
+        <li>브라우저의 사이트 데이터를 삭제하면 익명 방문 식별값이 초기화됩니다.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>7. 문의</h2>
+      <p>개인정보 관련 문의: <code>contact@uxo.kr</code></p>
+      <p class="note">본 방침의 내용이 변경되는 경우 이 페이지를 통해 안내합니다.</p>
+    </section>
+  </main>
+</body>
+</html>

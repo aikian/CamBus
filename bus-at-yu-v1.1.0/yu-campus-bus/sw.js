@@ -1,11 +1,11 @@
-const CACHE = 'cambus-v1.3.2-r1edits';
+const CACHE = 'cambus-v1.8.0-citybus';
 const SHELL = [
-  './', './index.html', './styles.css', './portal.js', './route-utils.js', './app.js', './ads.js',
+  './', './index.html', './styles.css', './portal.js', './route-utils.js', './subway-router.js', './app.js', './map-ui.js', './ads.js', './install.js',
   './stop-editor.html', './stop-editor.css', './stop-editor.js',
   './path-editor.html', './path-editor.css', './path-editor.js',
-  './manifest.webmanifest', './icon.svg', './route-guide-r1.png', './route-guide-r2.png',
+  './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './icon-192-maskable.png', './icon-512-maskable.png', './apple-touch-icon.png', './route-guide-r1.png', './route-guide-r2.png',
   './data/portal-feed.json', './data/portal-auto.json', './data/local-ads.json',
-  './data/route-timings.json', './data/route-stops.json', './data/route-paths.json'
+  './data/route-timings.json', './data/route-stops.json', './data/route-paths.json', './data/subway-daegu.json'
 ];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

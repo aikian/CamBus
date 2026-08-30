@@ -8,6 +8,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png" />
+  <!-- iOS는 manifest의 icons를 쓰지 않습니다. 이 태그가 없으면 홈 화면에 페이지 스크린샷이 들어갑니다. -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="CamBus" />
   <title>CamBus · 영남대 순환버스</title>
   <link rel="preconnect" href="https://tile.openstreetmap.org" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -25,109 +29,106 @@
     <div class="page-viewport" id="pageViewport">
       <div class="page-track" id="pageTrack">
         <section class="app-page main-page" id="mainPage" aria-label="CamBus 메인">
-          <aside class="side-panel" id="sidePanel">
-            <header class="brand-row">
-              <div>
-                <div class="brand">CamBus</div>
-                <div class="brand-sub">영남대학교 순환버스 · 교내 이동</div>
+          <aside class="route-panel" id="sidePanel" aria-label="길찾기">
+            <button class="sheet-handle" id="sheetHandle" type="button" aria-label="길찾기 창 크기 조절 (끌어서 조절, 눌러서 전체화면)"><span></span></button>
+            <header class="panel-head">
+              <div class="brand-row">
+                <div>
+                  <div class="brand">길찾기</div>
+                  <div class="brand-sub">영남대 순환버스 · 교내 이동</div>
+                </div>
               </div>
-              <button class="icon-btn mobile-only" id="collapsePanel" aria-label="패널 접기">⌄</button>
+              <button class="icon-btn" id="collapsePanel" aria-label="길찾기 닫기">×</button>
             </header>
-            <span class="mobile-panel-hint mobile-only" aria-hidden="true">길찾기 열기</span>
+            <span class="mobile-panel-hint" hidden aria-hidden="true">길찾기 열기</span>
 
-            <section class="search-card">
-              <div class="field-row">
-                <span class="dot dot-blue"></span>
-                <div class="field-body">
-                  <label for="startInput">출발</label>
-                  <input id="startInput" list="destinationList" value="현재 위치" placeholder="현재 위치 또는 건물·정류장 검색" autocomplete="off" />
+            <div class="panel-body">
+              <section class="search-card">
+                <div class="endpoints">
+                  <div class="field-row">
+                    <span class="dot dot-blue"></span>
+                    <div class="field-body">
+                      <label for="startInput">출발</label>
+                      <input id="startInput" list="destinationList" value="현재 위치" placeholder="현재 위치 또는 건물·정류장 검색" autocomplete="off" />
+                    </div>
+                    <div class="field-actions">
+                      <button class="small-btn icon-only" id="locateBtn" type="button" aria-label="현재 위치로 설정" title="현재 위치"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><path d="M12 1.8v3.2M12 19v3.2M1.8 12h3.2M19 12h3.2"></path></svg></button>
+                      <button class="small-btn icon-only" id="pickStartMapBtn" type="button" aria-pressed="false" aria-label="지도에서 출발지 선택" title="지도에서 선택"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.5s7-6.1 7-11.1a7 7 0 1 0-14 0c0 5 7 11.1 7 11.1z"></path><circle cx="12" cy="10.2" r="2.6"></circle></svg></button>
+                    </div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="field-row">
+                    <span class="dot dot-red"></span>
+                    <div class="field-body">
+                      <label for="destinationInput">도착</label>
+                      <input id="destinationInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" />
+                      <datalist id="destinationList"></datalist>
+                    </div>
+                    <div class="field-actions">
+                      <button class="small-btn icon-only" id="pickMapBtn" type="button" aria-pressed="false" aria-label="지도에서 도착지 선택" title="지도에서 선택"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.5s7-6.1 7-11.1a7 7 0 1 0-14 0c0 5 7 11.1 7 11.1z"></path><circle cx="12" cy="10.2" r="2.6"></circle></svg></button>
+                    </div>
+                  </div>
+                  <button class="swap-btn" id="swapEndpointsBtn" type="button" aria-label="출발지와 도착지 바꾸기" title="출발·도착 바꾸기">⇅</button>
                 </div>
-                <div class="field-actions">
-                  <button class="small-btn" id="locateBtn" type="button">현위치</button>
-                  <button class="small-btn" id="pickStartMapBtn" type="button" aria-pressed="false">지도</button>
-                </div>
-              </div>
-              <div class="divider"></div>
-              <div class="field-row">
-                <span class="dot dot-red"></span>
-                <div class="field-body">
-                  <label for="destinationInput">도착</label>
-                  <input id="destinationInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" />
-                  <datalist id="destinationList"></datalist>
-                </div>
-                <button class="small-btn" id="pickMapBtn" type="button" aria-pressed="false">지도</button>
-              </div>
-              <div class="divider"></div>
-              <div class="field-row depart-row">
-                <span class="dot dot-time" aria-hidden="true">🕒</span>
-                <div class="field-body">
-                  <label for="departureTimeInput">출발 시간</label>
-                  <div class="depart-controls">
-                    <select id="departureModeSelect" aria-label="출발 시간 방식">
-                      <option value="now">지금 출발</option>
-                      <option value="scheduled">시간 지정</option>
-                    </select>
-                    <input type="time" id="departureTimeInput" step="600" min="08:00" max="17:40" disabled aria-label="지정 출발 시간" />
+                <div class="divider"></div>
+                <div class="field-row depart-row">
+                  <span class="dot dot-time" aria-hidden="true">🕒</span>
+                  <div class="field-body">
+                    <label for="departureTimeInput">출발 시간</label>
+                    <div class="depart-controls">
+                      <select id="departureModeSelect" aria-label="출발 시간 방식">
+                        <option value="now">지금 출발</option>
+                        <option value="scheduled">시간 지정</option>
+                      </select>
+                      <input type="time" id="departureTimeInput" step="600" min="08:00" max="17:40" disabled aria-label="지정 출발 시간" />
+                    </div>
                   </div>
                 </div>
-              </div>
-              <button class="primary-btn" id="routeBtn">가장 빠른 길 찾기</button>
-            </section>
+                <button class="primary-btn" id="routeBtn">가장 빠른 길 찾기</button>
+              </section>
 
-            <section class="status-strip" id="serviceStatus">
-              <div>
-                <span class="status-dot" id="statusDot"></span>
-                <strong id="statusTitle">노선 불러오는 중</strong>
-              </div>
-              <span id="statusDetail">정차 위치와 OpenStreetMap 도로 경로를 확인 중…</span>
-            </section>
+              <section class="results" id="results">
+                <div class="empty-state">
+                  <div class="empty-icon">↗</div>
+                  <strong>목적지를 선택하세요</strong>
+                  <p>현재 위치에서 도보와 도보+순환버스를 비교합니다.</p>
+                </div>
+              </section>
 
-            <section class="chips" aria-label="지도 레이어">
-              <button class="chip active route1" data-layer="route1">1노선 인문계</button>
-              <button class="chip active route2" data-layer="route2">2노선 자연계</button>
-              <button class="chip active bus" data-layer="buses">예상 버스</button>
-            </section>
-
-            <section class="results" id="results">
-              <div class="empty-state">
-                <div class="empty-icon">↗</div>
-                <strong>목적지를 선택하세요</strong>
-                <p>현재 위치에서 도보와 도보+순환버스를 비교합니다.</p>
-              </div>
-            </section>
-
-            <section class="notice-card">
-              <div class="notice-title">예상 위치 산정 방식</div>
-              <p>실제 버스 GPS가 없을 때는 배차 시각, OSM 도로망 구간시간, 서문 5분 정차를 이용해 추정합니다.</p>
-              <p style="margin-top:6px;">탑승자가 명시적으로 위치 공유에 동의한 운행편은 익명 집계 위치를 우선 사용할 수 있습니다.</p>
-            </section>
+              <details class="notice-card">
+                <summary class="notice-title">예상 위치 산정 방식</summary>
+                <p>실제 버스 GPS가 없을 때는 배차 시각, OSM 도로망 구간시간, 서문 5분 정차를 이용해 추정합니다.</p>
+                <p style="margin-top:6px;">탑승자가 명시적으로 위치 공유에 동의한 운행편은 익명 집계 위치를 우선 사용할 수 있습니다.</p>
+              </details>
+            </div>
           </aside>
 
           <main id="map" aria-label="영남대학교 캠퍼스 지도"></main>
 
-          <button class="main-page-edge" id="mainPageEdge" type="button" aria-label="Picks 페이지로 넘기기"><span>›</span></button>
-
-          <div class="top-floating desktop-only">
-            <button class="map-pill" id="fitCampusBtn">캠퍼스 전체</button>
-            <button class="map-pill" id="guideBtn">노선 안내</button>
-            <button class="map-pill" id="timetableBtn">배차표</button>
+          <div class="map-search" id="mapSearch">
+            <span class="map-search-icon" aria-hidden="true">🔍</span>
+            <input id="mapSearchInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" aria-label="장소 검색" />
+            <button class="map-search-clear" id="mapSearchClear" type="button" hidden aria-label="검색어 지우기">×</button>
+            <button class="map-search-route" id="mobilePanelBtn" type="button">길찾기</button>
           </div>
 
+          <button class="main-page-edge" id="mainPageEdge" type="button" aria-label="Picks 페이지로 넘기기"><span>›</span></button>
+
           <div class="map-controls">
-            <button class="round-btn" id="zoomInBtn" aria-label="확대">＋</button>
-            <button class="round-btn" id="zoomOutBtn" aria-label="축소">−</button>
-            <button class="round-btn locate" id="mapLocateBtn" aria-label="현재 위치">◎</button>
+            <div class="zoom-group desktop-only">
+              <button class="round-btn" id="zoomInBtn" aria-label="확대">＋</button>
+              <button class="round-btn" id="zoomOutBtn" aria-label="축소">−</button>
+            </div>
+            <button class="round-btn locate" id="mapLocateBtn" aria-label="현재 위치" title="현재 위치">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="6.5"></circle>
+                <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle>
+                <path d="M12 1.8v3.2M12 19v3.2M1.8 12h3.2M19 12h3.2"></path>
+              </svg>
+            </button>
           </div>
 
           <div class="sim-badge" id="simBadge" hidden></div>
-
-          <div class="legend">
-            <span><i class="line line-r1"></i>1노선</span>
-            <span><i class="line line-r2"></i>2노선</span>
-            <span><i class="bus-mini"></i>예상 버스</span>
-          </div>
-
-          <button class="mobile-route-fab mobile-only" id="mobilePanelBtn">길찾기</button>
 
           <section class="guidance-bar" id="guidanceBar" hidden aria-live="polite">
             <div class="guidance-main">
@@ -136,12 +137,13 @@
                 <strong id="guidanceTitle">승하차 알림</strong>
                 <span id="guidanceDetail">경로를 선택하면 안내를 시작합니다.</span>
               </div>
+              <button class="guidance-close" id="stopGuidanceBtn" type="button" aria-label="안내 종료">×</button>
             </div>
+            <div class="guidance-progress" aria-hidden="true"><i id="guidanceProgress"></i></div>
             <div class="guidance-actions">
-              <button class="guidance-action" id="shareRideBtn" hidden>위치공유 OFF</button>
-              <button class="guidance-action" id="crowdingBtn" hidden>혼잡도</button>
               <button class="guidance-action primary" id="guidanceStageBtn" hidden>탑승했어요</button>
-              <button class="guidance-action" id="stopGuidanceBtn">종료</button>
+              <button class="guidance-action ghost" id="shareRideBtn" hidden>위치 공유</button>
+              <button class="guidance-action ghost" id="crowdingBtn" hidden>혼잡도</button>
             </div>
           </section>
 
@@ -156,8 +158,8 @@
             <header class="links-header">
               <div>
                 <span class="links-kicker">CamBus · Picks</span>
-                <h1>영대 생활 피드</h1>
-                <p>영대소식, 학사 일정, 주변 맛집, 유용한 정보를 배너로 모았습니다.</p>
+                <h1>생활 피드</h1>
+                <p>학교 소식, 학사 일정, 주변 맛집, 유용한 정보를 모았습니다.</p>
               </div>
               <button class="links-refresh" id="refreshLinksBtn" type="button">새로고침</button>
             </header>
@@ -169,30 +171,17 @@
             </div>
 
             <footer class="links-footer">
-              <section class="visitor-stats" aria-label="사용자 통계">
-                <div class="visitor-stat">
-                  <span>오늘</span>
-                  <strong id="todayUsers">—</strong>
-                  <small>사용자</small>
-                </div>
-                <div class="visitor-stat">
-                  <span>이번달</span>
-                  <strong id="monthUsers">—</strong>
-                  <small>사용자</small>
-                </div>
-              </section>
+              <p class="visitor-line" aria-label="사용자 통계">
+                오늘 <strong id="todayUsers">—</strong> · 이번달 <strong id="monthUsers">—</strong>
+              </p>
               <p class="visitor-note" id="visitorNote">익명 브라우저 기준 고유 사용자 수</p>
-
-              <section class="links-ad" id="linksAd" aria-label="광고">
-                <span class="ad-label">광고</span>
-                <div class="links-ad-slot" id="linksAdSlot">
-                  <a class="ad-recruit-link" href="mailto:ad@uxo.kr">
-                    <strong>영남대 · 경산 지역 광고 모집중</strong>
-                    <span>가게 · 행사 · 동아리 · 지역 서비스 배너 문의</span>
-                    <b>ad@uxo.kr</b>
-                  </a>
-                </div>
-              </section>
+              <p class="contact-line">
+                배너 광고 문의 <span class="contact-email" id="contactEmail">contact@uxo.kr</span>
+                <button type="button" class="copy-btn" id="copyContactEmail" aria-label="이메일 주소 복사">복사</button>
+              </p>
+              <p class="contact-line">
+                <a class="policy-link" href="./privacy.html">개인정보처리방침</a>
+              </p>
             </footer>
           </div>
         </section>
@@ -206,37 +195,6 @@
         <span>첫 접속 세션 1회 · 개발 모드</span>
       </div>
     </section>
-
-    <dialog id="timetableDialog">
-      <div class="dialog-head">
-        <div><h2>교내 순환버스 배차표</h2><p>2026학년도 2학기 조정안 · 2026-09-01 시행</p></div>
-        <button class="icon-btn" id="closeTimetable" type="button" aria-label="배차표 닫기">×</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>구분</th><th>운행시간</th><th>배차</th></tr></thead>
-          <tbody>
-            <tr><td>아침 집중 등교</td><td>08:00~10:50, 10분 간격</td><td>10분</td></tr>
-            <tr><td>오전</td><td>11:00, 11:20, 11:40</td><td>20분</td></tr>
-            <tr><td>점심</td><td>운행없음</td><td>—</td></tr>
-            <tr><td>오후</td><td>13:00~17:40, 20분 간격</td><td>20분</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="dialog-note">운행 요일·휴일 조건은 제공된 자료에 없어 이 프로토타입에서 별도 제한하지 않습니다.</div>
-    </dialog>
-
-    <dialog id="guideDialog">
-      <div class="dialog-head">
-        <div><h2>노선 안내 참고 이미지</h2><p>사용자 제공 손그림 노선도 · 정차 위치 보정에 반영</p></div>
-        <button class="icon-btn" id="closeGuide" type="button" aria-label="노선 안내 닫기">×</button>
-      </div>
-      <div class="guide-wrap">
-        <section class="guide-section"><h3>1노선 (인문계)</h3><p>국제교류센터 → 중앙도서관 → 음악관 → 인문관 → 서문 → 제1과학관 → 천마관 → 사범대 → 국제교류센터</p><img src="route-guide-r1.png" alt="1노선 손그림 안내도" class="guide-image" /></section>
-        <section class="guide-section"><h3>2노선 (자연계)</h3><p>노천강당 → 제1·2과학관 → 생명응용과학대 → 기계관 → 천마아트센터/서문 → 약학관 → 생활과학대학 → 중앙도서관 → 노천강당</p><img src="route-guide-r2.png" alt="2노선 손그림 안내도" class="guide-image" /></section>
-      </div>
-      <div class="dialog-note">손그림 이미지는 참고용입니다. 앱 경로선은 정류장·수동 경유점과 OpenStreetMap 도로망으로 미리 계산해 저장한 고정 노선을 사용합니다.</div>
-    </dialog>
 
     <dialog id="crowdConsentDialog">
       <div class="dialog-head">
@@ -263,6 +221,30 @@
       <div class="dialog-note">앱 사용자 신고 기반 정보이며 실제 전체 승객 수를 의미하지 않습니다.</div>
     </dialog>
 
+    <!-- 홈 화면 추가 유도. 안드로이드는 버튼 한 번으로 설치되고,
+         iOS Safari는 프로그램 설치가 불가능해 공유 시트 경로를 안내합니다. -->
+    <div class="install-bar" id="installBar" hidden>
+      <img class="install-icon" src="icon-192.png" alt="" width="40" height="40" />
+      <div class="install-copy">
+        <strong>홈 화면에 추가</strong>
+        <span id="installSub">앱처럼 바로 열 수 있어요</span>
+      </div>
+      <button class="install-go" id="installGo" type="button">추가</button>
+      <button class="install-close" id="installClose" type="button" aria-label="닫기">×</button>
+    </div>
+
+    <dialog id="iosInstallDialog" class="ios-install">
+      <div class="dialog-head">
+        <div><h2>홈 화면에 추가</h2><p>Safari에서 두 단계면 앱처럼 쓸 수 있어요.</p></div>
+        <button class="icon-btn" id="closeIosInstall" aria-label="닫기">×</button>
+      </div>
+      <ol class="ios-steps">
+        <li><span class="ios-step-num">1</span><span>아래 <b>공유</b> 버튼 <span class="ios-share-glyph" aria-hidden="true">⬆</span> 를 누르세요</span></li>
+        <li><span class="ios-step-num">2</span><span><b>홈 화면에 추가</b>를 선택하세요</span></li>
+      </ol>
+      <div class="dialog-note">Safari에서만 추가할 수 있습니다. Chrome 등 다른 앱으로 열었다면 Safari로 열어주세요.</div>
+    </dialog>
+
     <div class="toast" id="toast"></div>
   </div>
 
@@ -281,6 +263,9 @@
   <script src="ads.js"></script>
   <script src="portal.js"></script>
   <script src="route-utils.js"></script>
+  <script src="subway-router.js"></script>
   <script src="app.js"></script>
+  <script src="map-ui.js"></script>
+  <script src="install.js"></script>
 </body>
 </html>
