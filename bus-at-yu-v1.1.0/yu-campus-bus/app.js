@@ -261,6 +261,12 @@ function normalize(s) {
     .replace(/collegeof/g, '');
 }
 
+// 마커 안에 넣을 노선 번호. '셔틀1' -> '1'. 이름이 바뀌어도 번호만 뽑는다.
+function routeNumber(route) {
+  const match = String(route?.short || route?.id || '').match(/\d+/);
+  return match ? match[0] : '';
+}
+
 function makeBusIcon(routeColor, label) {
   return L.divIcon({ className: '', html: `<div class="bus-dot" style="background:${routeColor}">${escapeHtml(label)}</div>`, iconSize: [16, 16], iconAnchor: [8, 8] });
 }
@@ -924,13 +930,13 @@ function updateBuses() {
       const nextName = p.nextStopIdx != null ? route.stops[p.nextStopIdx]?.name : '종점';
       let visual = state.predictedBusVisuals.get(key);
       if (!visual) {
-        const marker = L.marker(p.coord, { icon: makeBusIcon(route.color, route.short[0]), zIndexOffset: 400 }).bindPopup('').addTo(map);
+        const marker = L.marker(p.coord, { icon: makeBusIcon(route.color, routeNumber(route)), zIndexOffset: 400 }).bindPopup('').addTo(map);
         visual = { marker, routeId, departure: trip.time };
         state.predictedBusVisuals.set(key, visual);
       } else {
         visual.routeId = routeId;
         visual.departure = trip.time;
-        markerSetIconSafe(visual.marker, makeBusIcon(route.color, route.short[0]));
+        markerSetIconSafe(visual.marker, makeBusIcon(route.color, routeNumber(route)));
         visual.marker.setLatLng(p.coord);
       }
       visual.marker.setPopupContent(`<strong>${route.name} 예상 차량</strong><br>${trip.time} 기준 출발 · ${escapeHtml(p.label)}<br><b>다음: ${escapeHtml(nextName || '종점')} ${eta ? `· 약 ${eta}` : ''}</b><br><small>시간표·구간시간 기반 예상 위치 · 실제 버스 GPS 아님</small>`);
@@ -1050,11 +1056,11 @@ function renderCrowdBuses(rows = []) {
     const nextName = progress ? route.stops[progress.nextStopIdx]?.name : '';
     let visual = state.crowdBusVisuals.get(key);
     if (!visual) {
-      const marker = L.marker([row.lat,row.lng], { icon: makeCrowdBusIcon(route.color, route.short[0]), zIndexOffset: 470 }).bindPopup('').addTo(map);
+      const marker = L.marker([row.lat,row.lng], { icon: makeCrowdBusIcon(route.color, routeNumber(route)), zIndexOffset: 470 }).bindPopup('').addTo(map);
       visual = { marker };
       state.crowdBusVisuals.set(key, visual);
     } else {
-      markerSetIconSafe(visual.marker, makeCrowdBusIcon(route.color, route.short[0]));
+      markerSetIconSafe(visual.marker, makeCrowdBusIcon(route.color, routeNumber(route)));
       animateMarkerTo(visual.marker, [row.lat,row.lng], Math.max(1500, LIVE_POLL_MS - 800));
     }
     visual.marker.setPopupContent(`<strong>${route.name} 탑승객 공유 위치</strong><br>${escapeHtml(row.tripKey)}${nextName ? `<br><b>다음: ${escapeHtml(nextName)} · 약 ${eta || '계산중'}</b>` : ''}<br><small>기여 ${row.contributors}명 · ${row.sampleAgeSeconds}초 전 · 실제 버스 GPS가 아니라 동의한 탑승객 위치 집계</small>`);

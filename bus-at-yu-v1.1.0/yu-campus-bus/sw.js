@@ -1,4 +1,4 @@
-const CACHE = 'cambus-v2.0.0-hardening';
+const CACHE = 'cambus-v2.0.1-busdot';
 const SHELL = [
   './', './index.html', './styles.css',
   './app.js', './portal.js', './ads.js', './map-ui.js', './install.js',
