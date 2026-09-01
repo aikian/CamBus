@@ -240,9 +240,27 @@
           <button id="openStopEditor">정류장 편집기 열기</button>
           <button id="openPathEditor">경로 편집기 열기</button>
         </div>
-        <p class="hint">편집기는 저장 시 관리자 권한이 필요합니다. 원격에서 쓰려면 서버에
+        <p class="hint" style="margin-bottom:0;">편집기는 저장 시 관리자 권한이 필요합니다. 원격에서 쓰려면 서버에
           <code>CAMBUS_ADMIN_TOKEN</code>이 설정돼 있어야 하고, 현재 편집기는 저장 요청에 토큰을 싣지 않으므로
           <strong>지금은 localhost에서만 저장됩니다.</strong></p>
+      </section>
+
+      <section>
+        <h2>실측 구간 시간 <span class="list-count" id="legUpdated"></span></h2>
+        <p class="desc">승·하차 안내를 켜고 버스를 탄 이용자들에게서 모은 구간별 실제 소요 시간입니다.
+          좌표나 식별자는 받지 않고 걸린 초만 익명으로 쌓입니다. 표본이 쌓이면 아래에서 배차 계산에 반영할 수 있습니다.</p>
+        <div id="legStats"><p class="empty">불러오는 중…</p></div>
+        <div class="toolbar">
+          <label style="display:flex;align-items:center;gap:6px;margin:0;">
+            <span style="font-size:11px;color:var(--muted);font-weight:650;">최소 표본</span>
+            <input type="number" id="minSamples" value="3" min="1" max="50" style="width:70px;" />
+          </label>
+          <div class="spacer"></div>
+          <button class="primary" id="applyTimings">실측값을 배차 계산에 반영</button>
+        </div>
+        <p class="msg" id="legMsg"></p>
+        <p class="hint">반영하면 <code>route-timings.json</code> 의 구간 시간이 중앙값으로 바뀌고,
+          다음 접속부터 도착 예상 시각 계산에 쓰입니다. 표본이 모자란 구간은 기존 값을 그대로 둡니다.</p>
       </section>
     </div>
 
@@ -555,6 +573,47 @@
     } catch (error) { say($('reportMsg'), `조회 실패: ${error.message}`, false); }
   });
 
+  // ---------------- 실측 구간 시간 ----------------
+  function fmtSec(v) { return v == null ? '—' : (v >= 60 ? Math.floor(v / 60) + '분 ' + (v % 60) + '초' : v + '초'); }
+
+  async function loadLegStats() {
+    try {
+      const out = await api('/api/admin/leg-stats');
+      $('legUpdated').textContent = out.updatedAt ? '최근 수집 ' + new Date(out.updatedAt).toLocaleString('ko-KR') : '수집된 표본 없음';
+      const blocks = Object.entries(out.routes || {}).map(([routeId, data]) => {
+        const rows = (data.legs || []).map(leg =>
+          `<tr><td>${esc(leg.from)} → ${esc(leg.to)}</td>` +
+          `<td class="num">${num(leg.samples)}</td>` +
+          `<td class="num">${esc(fmtSec(leg.medianSeconds))}</td>` +
+          `<td class="num">${esc(fmtSec(leg.savedSeconds))}</td></tr>`).join('');
+        const dwellRows = (data.dwell || []).filter(d => d.samples > 0).map(d =>
+          `<span class="pill off" style="margin-right:6px;">${esc(d.stop)} 정차 ${esc(fmtSec(d.medianSeconds))} (${num(d.samples)}회)</span>`).join('');
+        return `<div style="margin-bottom:14px;">
+          <h3 style="margin:0 0 6px;font-size:13px;">${esc(routeId)}</h3>
+          <table>
+            <thead><tr><th>구간</th><th class="num">표본</th><th class="num">실측 중앙값</th><th class="num">현재 적용값</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="4" class="empty">구간 정보가 없습니다.</td></tr>'}</tbody>
+          </table>
+          ${dwellRows ? `<div style="margin-top:8px;">${dwellRows}</div>` : ''}
+        </div>`;
+      }).join('');
+      $('legStats').innerHTML = blocks || '<p class="empty">노선 정보를 읽지 못했습니다.</p>';
+    } catch (error) {
+      $('legStats').innerHTML = '<p class="empty">불러오지 못했습니다: ' + esc(error.message) + '</p>';
+    }
+  }
+
+  $('applyTimings').addEventListener('click', async () => {
+    if (!confirm('실측 중앙값을 배차 계산에 반영합니다. 계속할까요?')) return;
+    try {
+      const out = await api('/api/admin/apply-timings', {
+        method: 'POST', body: JSON.stringify({ minSamples: Number($('minSamples').value) })
+      });
+      say($('legMsg'), `${out.applied}개 구간에 실측값을 반영했습니다.`, true);
+      await loadLegStats();
+    } catch (error) { say($('legMsg'), `반영 실패: ${error.message}`, false); }
+  });
+
   // ---------------- 노선 편집기 ----------------
   $('openStopEditor').addEventListener('click', () => window.open('./stop-editor.html', '_blank', 'noopener'));
   $('openPathEditor').addEventListener('click', () => window.open('./path-editor.html', '_blank', 'noopener'));
@@ -614,8 +673,8 @@
   }
 
   async function loadAll() {
-    const [, , adsOut, feedOut, srcOut] = await Promise.all([
-      loadOverview(), loadLayout(),
+    const [, , , adsOut, feedOut, srcOut] = await Promise.all([
+      loadOverview(), loadLayout(), loadLegStats(),
       api('/api/admin/local-ads'), api('/api/admin/portal-feed'), api('/api/admin/feed-sources')
     ]);
     ads = adsOut.ads || []; renderAds();

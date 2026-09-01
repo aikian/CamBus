@@ -58,6 +58,10 @@ const RIDE_CONFIRM_SAMPLES = 2;       // 연속 표본 수(한 번 튄 값으로
 const ALIGHT_SOON_SECONDS = 75;       // 속도 기준 하차 예고
 const PASSED_STOP_METERS = 130;       // 최근접 이후 이만큼 멀어지면 지나친 것으로 본다
 const SPEED_WINDOW = 4;               // 속도 평활 표본 수
+// 실제 운행 시간 수집. 정류장 반경 안에 들어오면 도착, 벗어나면 출발로 봅니다.
+const STOP_TOUCH_METERS = 45;
+const LEG_SAMPLE_MIN_SECONDS = 5;
+const LEG_SAMPLE_MAX_SECONDS = 1800;
 // 교내 순환버스가 낼 수 없는 속도는 GPS 튐으로 보고 표본에서 버린다.
 // (넣고 자르면 평균이 오염돼 탑승/정차 판정이 어긋난다)
 const MAX_PLAUSIBLE_SPEED_MPS = 25;
@@ -2279,6 +2283,60 @@ function remainingStopCount(g, coord) {
   return routeLegIndices(route.stops.length, nearestIdx, g.plan.alightIdx).length;
 }
 
+/**
+ * 순환버스가 구간을 지나는 데 실제로 걸린 시간과 정류장 정차 시간을 모읍니다.
+ *
+ * 보내는 것은 노선 ID, 구간/정류장 번호, 걸린 초 세 가지뿐입니다.
+ * 좌표도, 이용자 식별자도 보내지 않으므로 서버에는 개인 이동 경로가 남지 않습니다.
+ * 모인 중앙값은 관리자 화면에서 route-timings.json 의 구간 시간으로 반영할 수 있습니다.
+ */
+function sendLegSample(routeId, type, index, seconds) {
+  const value = Math.round(seconds);
+  if (!Number.isFinite(value) || value < LEG_SAMPLE_MIN_SECONDS || value > LEG_SAMPLE_MAX_SECONDS) return;
+  const body = JSON.stringify({ routeId, type, index, seconds: value });
+  fetch('/api/leg-sample', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true
+  }).catch(() => {});
+}
+
+function isNextStopIndex(routeId, from, to) {
+  const route = ROUTES[routeId];
+  if (!route) return false;
+  const serviceCount = Math.max(1, route.stops.length - 1);
+  return ((from + 1) % serviceCount) === to;
+}
+
+/** 주행 중 정류장 도착/출발을 감지해 구간 시간과 정차 시간을 기록합니다. */
+function trackLegTiming(g, coord, timestamp) {
+  const routeId = g.plan.routeId;
+  const track = g.legTrack || (g.legTrack = { atStop: null, arrivedAt: null, departedStop: null, departedAt: null });
+  const idx = nearestGuidanceStopIndex(g, coord);
+  const stopCoord = liveStopCoord(routeId, idx);
+  if (!stopCoord) return;
+  const near = haversine(coord, stopCoord) <= STOP_TOUCH_METERS;
+
+  if (near && track.atStop !== idx) {
+    // 직전 정류장에서 출발해 여기 도착했다면 그 사이가 한 구간이다.
+    if (track.departedStop != null && track.departedAt != null && isNextStopIndex(routeId, track.departedStop, idx)) {
+      sendLegSample(routeId, 'travel', track.departedStop, (timestamp - track.departedAt) / 1000);
+    }
+    track.atStop = idx;
+    track.arrivedAt = timestamp;
+    track.departedStop = null;
+    track.departedAt = null;
+    return;
+  }
+
+  if (!near && track.atStop != null) {
+    // 정류장을 벗어났다 = 정차 종료
+    if (track.arrivedAt != null) sendLegSample(routeId, 'dwell', track.atStop, (timestamp - track.arrivedAt) / 1000);
+    track.departedStop = track.atStop;
+    track.departedAt = timestamp;
+    track.atStop = null;
+    track.arrivedAt = null;
+  }
+}
+
 function enterRidingStage(auto) {
   const g = state.activeGuidance;
   if (!g || g.stage === 'riding') return;
@@ -2326,6 +2384,7 @@ function processGuidancePosition(position) {
     }
   } else if (g.stage === 'riding') {
     sendRideTelemetry(coord, accuracy);
+    if (reliable) trackLegTiming(g, coord, position.timestamp || Date.now());
     g.minAlightDist = g.minAlightDist == null ? alightDist : Math.min(g.minAlightDist, alightDist);
     const etaSeconds = speed > 1 ? alightDist / speed : null;
     const remaining = remainingStopCount(g, coord);
@@ -2377,6 +2436,7 @@ async function startGuidance(plan) {
     lastFix: null,
     lastBoardDist: null,
     minAlightDist: null,
+    legTrack: null,
     shareRideTelemetry: false,
     riderToken: null,
     reportToken: null,

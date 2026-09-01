@@ -33,6 +33,7 @@ const VISITOR_STATS_FILE = path.join(DATA_DIR, 'visitor-stats.json');
 const METRICS_FILE = path.join(DATA_DIR, 'metrics.json');
 const AD_LAYOUT_FILE = path.join(DATA_DIR, 'ad-layout.json');
 const FEED_SOURCES_FILE = path.join(DATA_DIR, 'feed-sources.json');
+const LEG_STATS_FILE = path.join(DATA_DIR, 'leg-stats.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const TELEMETRY_TTL_MS = 120_000;
 const CROWD_TTL_MS = 30 * 60_000;
@@ -42,6 +43,11 @@ const MAX_UPLOAD_BODY = 6 * 1024 * 1024;   // base64 로 감싸면 원본보다 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const AD_SLOTS = new Set(['mainBottom', 'launch', 'picksFeed', 'picksFooter']);
 const AD_EVENT_TYPES = new Set(['impression', 'click']);
+// 실측 구간 기록. 위치 좌표는 받지도 저장하지도 않고, 구간에 걸린 초만 모읍니다.
+const LEG_SAMPLE_TYPES = new Set(['travel', 'dwell']);
+const LEG_SECONDS_MIN = 5;
+const LEG_SECONDS_MAX = 1800;
+const LEG_SAMPLE_KEEP = 60;      // 구간마다 최근 표본 이만큼만 보관(중앙값 계산용)
 const UPLOAD_TYPES = new Map([
   ['image/png', '.png'], ['image/jpeg', '.jpg'], ['image/webp', '.webp'], ['image/gif', '.gif']
 ]);
@@ -877,6 +883,112 @@ function adminOverview() {
   };
 }
 
+/**
+ * 순환버스가 실제로 구간을 지나는 데 걸린 시간을 모읍니다.
+ *
+ * 개인정보 설계상 중요한 점:
+ *  - 좌표를 받지 않습니다. 클라이언트가 구간 번호와 걸린 초만 보냅니다.
+ *  - 이용자 식별자를 붙이지 않습니다. 표본끼리 같은 사람인지 알 수 없습니다.
+ *  - 남는 것은 구간별 통계(표본 수, 중앙값 등)뿐이라 개인 이동 경로가 복원되지 않습니다.
+ * 이렇게 모은 중앙값은 route-timings.json 의 legs 값으로 그대로 쓸 수 있습니다.
+ */
+function loadLegStats() {
+  const raw = readJsonFile(LEG_STATS_FILE, {});
+  return (raw && typeof raw === 'object' && raw.routes) ? raw : { version: 1, updatedAt: null, routes: {} };
+}
+
+function persistLegStats(stats) {
+  const temp = LEG_STATS_FILE + '.tmp';
+  fs.writeFileSync(temp, JSON.stringify(stats, null, 2) + '\n');
+  fs.renameSync(temp, LEG_STATS_FILE);
+}
+
+function median(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+function recordLegSample(routeId, type, index, seconds) {
+  if (!ROUTES.has(routeId) || !LEG_SAMPLE_TYPES.has(type)) return false;
+  const idx = Number(index);
+  const value = Math.round(Number(seconds));
+  if (!Number.isInteger(idx) || idx < 0 || idx > 60) return false;
+  if (!Number.isFinite(value) || value < LEG_SECONDS_MIN || value > LEG_SECONDS_MAX) return false;
+
+  const stats = loadLegStats();
+  if (!stats.routes[routeId]) stats.routes[routeId] = { travel: {}, dwell: {} };
+  const bucket = stats.routes[routeId][type] || (stats.routes[routeId][type] = {});
+  const key = String(idx);
+  if (!bucket[key]) bucket[key] = { samples: [], count: 0, updatedAt: null };
+  const entry = bucket[key];
+  entry.samples.push(value);
+  if (entry.samples.length > LEG_SAMPLE_KEEP) entry.samples.shift();
+  entry.count += 1;
+  entry.updatedAt = new Date().toISOString();
+  stats.updatedAt = entry.updatedAt;
+  persistLegStats(stats);
+  return true;
+}
+
+/** 관리자 화면에 보여줄 요약: 구간별 표본 수와 중앙값, 현재 저장된 값 비교. */
+function legStatsSummary() {
+  const stats = loadLegStats();
+  const timings = loadRouteTimings();
+  const stopData = loadRouteStops();
+  const out = { updatedAt: stats.updatedAt, routes: {} };
+  for (const routeId of ROUTES) {
+    const stops = stopData.routes?.[routeId]?.stops || [];
+    const legCount = Math.max(0, stops.length - 1);
+    const saved = timings.routes?.[routeId]?.legs || [];
+    const travel = stats.routes?.[routeId]?.travel || {};
+    const dwell = stats.routes?.[routeId]?.dwell || {};
+    out.routes[routeId] = {
+      legs: Array.from({ length: legCount }, (_, i) => {
+        const entry = travel[String(i)];
+        return {
+          index: i,
+          from: stops[i]?.name || '',
+          to: stops[i + 1]?.name || '',
+          savedSeconds: saved[i] ?? null,
+          samples: entry ? entry.count : 0,
+          medianSeconds: entry ? median(entry.samples) : null
+        };
+      }),
+      dwell: Object.entries(dwell).map(([key, entry]) => ({
+        index: Number(key),
+        stop: stops[Number(key)]?.name || '',
+        samples: entry.count,
+        medianSeconds: median(entry.samples)
+      })).sort((a, b) => a.index - b.index)
+    };
+  }
+  return out;
+}
+
+/** 실측 중앙값을 route-timings.json 에 반영합니다(표본이 minSamples 이상인 구간만). */
+function applyMeasuredTimings(minSamples = 3) {
+  const summary = legStatsSummary();
+  const current = loadRouteTimings();
+  const next = { version: 1, updatedAt: new Date().toISOString(), routes: {} };
+  let applied = 0;
+  for (const routeId of ROUTES) {
+    const legs = summary.routes[routeId]?.legs || [];
+    const saved = current.routes?.[routeId]?.legs || [];
+    next.routes[routeId] = {
+      source: 'field-measured-from-riders',
+      legs: legs.map((leg, i) => {
+        if (leg.samples >= minSamples && leg.medianSeconds != null) { applied += 1; return leg.medianSeconds; }
+        return saved[i] ?? null;
+      })
+    };
+  }
+  const validated = validatedRouteTimings(next);
+  persistRouteTimings(validated);
+  return { applied, timings: validated };
+}
+
 function loadVisitorStats() {
   try {
     const parsed = JSON.parse(fs.readFileSync(VISITOR_STATS_FILE, 'utf8'));
@@ -1024,6 +1136,24 @@ async function api(req, res, pathname) {
     return json(res, 202, { ok: true });
   }
 
+  if (req.method === 'POST' && pathname === '/api/leg-sample') {
+    const body = await readJson(req);
+    const saved = recordLegSample(body.routeId, body.type, body.index, body.seconds);
+    return json(res, saved ? 202 : 400, saved ? { ok: true } : { error: 'invalid_leg_sample' });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/admin/leg-stats') {
+    if (!requireAdmin(req, res)) return;
+    return json(res, 200, legStatsSummary());
+  }
+
+  if (req.method === 'POST' && pathname === '/api/admin/apply-timings') {
+    if (!requireAdmin(req, res)) return;
+    const body = await readJson(req);
+    const minSamples = clampInt(body.minSamples, 1, 50, 3);
+    return json(res, 200, { ok: true, ...applyMeasuredTimings(minSamples) });
+  }
+
   if (req.method === 'POST' && pathname === '/api/ad-event') {
     const body = await readJson(req);
     if (!AD_EVENT_TYPES.has(body.type)) return json(res, 400, { error: 'invalid_ad_event' });
@@ -1164,6 +1294,9 @@ const PUBLIC_FILES = new Set([
   'index.html', 'styles.css', 'app.js', 'portal.js', 'ads.js', 'map-ui.js',
   'install.js', 'route-utils.js', 'subway-router.js', 'sw.js',
   'manifest.webmanifest', 'privacy.html',
+  // 관리자 콘솔. 로그인 폼 외에는 아무것도 보여주지 않고, 모든 관리 API 는
+  // CAMBUS_ADMIN_TOKEN 없이는 401 이다. 운영에서 못 열면 존재 이유가 없어 공개한다.
+  'admin.html',
   'icon.svg', 'icon-192.png', 'icon-512.png',
   'icon-192-maskable.png', 'icon-512-maskable.png', 'apple-touch-icon.png',
   'vendor/leaflet.js', 'vendor/leaflet.css',
@@ -1173,7 +1306,7 @@ const PUBLIC_FILES = new Set([
 ]);
 // 로컬 편집 도구는 운영에 배포하지 않는다.
 const DEV_ONLY_FILES = new Set([
-  'admin.html', 'stop-editor.html', 'stop-editor.css', 'stop-editor.js',
+  'stop-editor.html', 'stop-editor.css', 'stop-editor.js',
   'path-editor.html', 'path-editor.css', 'path-editor.js',
   'route-guide-r1.png', 'route-guide-r2.png'
 ]);
