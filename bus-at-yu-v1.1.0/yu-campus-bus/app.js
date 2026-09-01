@@ -204,6 +204,9 @@ const state = {
   routeReady: false,
   activeGuidance: null,
   geoWatchId: null,
+  followUser: false,
+  accuracyCircle: null,
+  locateToastShown: false,
   audioContext: null,
   guidanceTimer: null,
   mobilityLayers: [],
@@ -286,6 +289,65 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
 }
 
+/**
+ * 정류장 이름 하나에 걸린 모든 정차를 모은다.
+ * 순환 노선은 한 바퀴 도는 동안 같은 정류장을 두 번 지나기도 하고(가는 편/오는 편),
+ * 환승역은 두 노선이 함께 서므로, "몇 분 남았나"는 방면마다 다르다.
+ */
+function stopDirections(stopName) {
+  const list = [];
+  for (const routeId of ['r1', 'r2']) {
+    const route = ROUTES[routeId];
+    if (!route) continue;
+    const stops = route.stops;
+    const serviceCount = Math.max(1, stops.length - 1);   // 마지막은 회차 종점(첫 정류장과 동일)
+    stops.forEach((stop, index) => {
+      if (index >= serviceCount || stop.name !== stopName) return;
+      const nextStop = stops[(index + 1) % serviceCount];
+      list.push({
+        routeId, index,
+        code: stop.code || '',
+        toward: nextStop ? nextStop.name : '',
+        arrival: nextArrivalAtStop(routeId, index, nowClock())
+      });
+    });
+  }
+  // 곧 오는 것부터. 도착 정보가 없는 방면은 뒤로 보낸다.
+  list.sort((a, b) => (a.arrival ? a.arrival.wait : Infinity) - (b.arrival ? b.arrival.wait : Infinity));
+  return list;
+}
+
+function noServiceNote() {
+  const today = nowClock();
+  if (today < new Date(EFFECTIVE_DATE + 'T00:00:00')) return `${EFFECTIVE_DATE}부터 조정 시간표 적용`;
+  return serviceDayNote(today) || '오늘 남은 운행 없음';
+}
+
+/** 정류장 팝업의 방면별 도착 안내. */
+function stopDirectionsHtml(stopName) {
+  const dirs = stopDirections(stopName);
+  if (!dirs.length) return '';
+  if (!dirs.some(d => d.arrival)) {
+    return `<div class="stop-dirs"><div class="stop-dirs-empty">${escapeHtml(noServiceNote())}</div></div>`;
+  }
+  return `<div class="stop-dirs">${dirs.map(d => {
+    const route = ROUTES[d.routeId];
+    if (!d.arrival) {
+      return `<div class="stop-dir">
+        <span class="stop-dir-badge" style="background:${route.color}">${escapeHtml(route.short)}</span>
+        <span class="stop-dir-toward">${escapeHtml(d.toward)} 방면</span>
+        <span class="stop-dir-wait">—</span>
+      </div>`;
+    }
+    const minutes = Math.max(1, Math.ceil(d.arrival.wait / 60));
+    return `<div class="stop-dir${d.arrival.wait <= 180 ? ' soon' : ''}">
+      <span class="stop-dir-badge" style="background:${route.color}">${escapeHtml(route.short)}</span>
+      <span class="stop-dir-toward">${escapeHtml(d.toward)} 방면${d.code ? ` <small style="color:#9aa0a6">${escapeHtml(d.code)}</small>` : ''}</span>
+      <span class="stop-dir-wait">${minutes}분<small>${timeText(d.arrival.arrival)} 도착</small></span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function stopEtaHtml(routeId, stopIdx) {
   const arrivals = nextArrivalsAtStop(routeId, stopIdx, nowClock(), 2);
   if (!arrivals.length) {
@@ -333,7 +395,7 @@ function stopPopupHtml(route, stopInfo, index) {
       <span style="color:#777">${escapeHtml(stopInfo.code || '')}${stopInfo.note ? ' · ' + escapeHtml(stopInfo.note) : ''}</span>
       ${stopInfo.guide ? `<div style="margin-top:6px;line-height:1.45"><small>${escapeHtml(stopInfo.guide)}</small></div>` : ''}
       ${transferBadgeHtml(route.id, stopInfo, index)}
-      ${stopEtaHtml(route.id, index)}
+      ${stopDirectionsHtml(stopInfo.name)}
       ${routeToButtonHtml(stopInfo.name, liveStopCoord(route.id, index) || stopInfo.coord)}
     </div>`;
 }
@@ -358,18 +420,10 @@ function canonicalStationCoord(station) {
 }
 
 function combinedStationPopupHtml(station) {
-  const blocks = station.members.map(m => {
-    const route = ROUTES[m.routeId];
-    const stopInfo = route.stops[m.index];
-    return `<div class="popup-stop-line">
-      <strong style="color:${route.color}">${escapeHtml(route.short)}</strong>
-      <span style="color:#777"> · ${escapeHtml(stopInfo.code || '')}${stopInfo.note ? ' · ' + escapeHtml(stopInfo.note) : ''}</span>
-      ${stopEtaHtml(route.id, m.index)}
-    </div>`;
-  }).join('<div class="popup-divider"></div>');
+  // 노선별 블록은 방면별 안내(stopDirectionsHtml)가 대신하므로 따로 그리지 않는다.
   return `<div class="popup-stop popup-stop-merged">
     <strong>${escapeHtml(station.name)} <span class="popup-transfer-tag">환승역</span></strong>
-    ${blocks}
+    ${stopDirectionsHtml(station.name)}
     ${routeToButtonHtml(station.name, canonicalStationCoord(station))}
   </div>`;
 }
@@ -1225,24 +1279,79 @@ function setUserLocation(coord, accuracy = null, recenter = true) {
   setStartLocation(coord, '현재 위치', accuracy, recenter);
 }
 
-function requestLocation() {
-  if (window.YUAds?.dismissLaunchAd) window.YUAds.dismissLaunchAd();
-  if (!navigator.geolocation) {
-    toast('이 브라우저는 위치 기능을 지원하지 않습니다.');
+// 위치를 한 번만 잡지 않고 계속 따라간다. 안내 중이 아니어도 마커가 실시간으로 움직이고,
+// 따라가기(follow)가 켜져 있으면 지도도 함께 이동한다. 지도를 직접 끌면 따라가기는 꺼진다.
+function updateAccuracyCircle(coord, accuracy) {
+  if (!Number.isFinite(accuracy) || accuracy <= 0) return;
+  const radius = Math.min(accuracy, 200);
+  if (state.accuracyCircle) {
+    state.accuracyCircle.setLatLng(coord).setRadius(radius);
     return;
   }
-  toast('현재 위치를 확인하는 중…');
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      setUserLocation([pos.coords.latitude, pos.coords.longitude], pos.coords.accuracy);
-      toast('현재 위치를 표시했습니다.');
-    },
-    err => {
-      console.warn(err);
-      toast('위치 권한을 허용하거나 HTTPS/localhost에서 실행하세요.');
-    },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 }
-  );
+  state.accuracyCircle = L.circle(coord, {
+    radius, interactive: false, weight: 1,
+    color: '#ffd60a', fillColor: '#ffd60a', fillOpacity: .12, opacity: .5
+  }).addTo(map);
+}
+
+function handleWatchPosition(position) {
+  const coord = [position.coords.latitude, position.coords.longitude];
+  const accuracy = position.coords.accuracy;
+  const first = !state.user;
+  setUserLocation(coord, accuracy, false);
+  updateAccuracyCircle(coord, accuracy);
+  if (first) map.setView(coord, Math.max(map.getZoom(), 17));
+  else if (state.followUser) map.panTo(coord, { animate: true, duration: .6 });
+  if (state.activeGuidance) processGuidancePosition(position);
+}
+
+function handleWatchError(error) {
+  console.warn('위치 추적 오류', error);
+  if (state.locateToastShown) return;
+  state.locateToastShown = true;
+  toast('위치 권한을 허용하거나 HTTPS/localhost에서 실행하세요.');
+}
+
+function startLocationWatch() {
+  if (!navigator.geolocation) {
+    toast('이 브라우저는 위치 기능을 지원하지 않습니다.');
+    return false;
+  }
+  if (state.geoWatchId != null) return true;
+  state.geoWatchId = navigator.geolocation.watchPosition(handleWatchPosition, handleWatchError, {
+    enableHighAccuracy: true, timeout: 15000, maximumAge: 0
+  });
+  return true;
+}
+
+function stopLocationWatch() {
+  if (state.geoWatchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.geoWatchId);
+  state.geoWatchId = null;
+}
+
+function setFollowUser(on) {
+  state.followUser = Boolean(on);
+  document.getElementById('mapLocateBtn')?.classList.toggle('active', state.followUser);
+  document.getElementById('locateBtn')?.classList.toggle('active', state.followUser);
+  if (state.followUser && state.user) map.panTo(state.user, { animate: true, duration: .5 });
+}
+
+function requestLocation() {
+  if (window.YUAds?.dismissLaunchAd) window.YUAds.dismissLaunchAd();
+  // 이미 따라가는 중이면 한 번 더 누를 때 따라가기만 끈다(지도를 자유롭게 보기 위함).
+  if (state.followUser) {
+    setFollowUser(false);
+    toast('따라가기를 껐습니다. 위치 표시는 계속됩니다.');
+    return;
+  }
+  if (!startLocationWatch()) return;
+  setFollowUser(true);
+  if (state.user) {
+    map.setView(state.user, Math.max(map.getZoom(), 17));
+    toast('현재 위치를 따라갑니다.');
+  } else {
+    toast('현재 위치를 확인하는 중…');
+  }
 }
 
 function setDestination(coord, name = '지도에서 선택한 위치') {
@@ -2278,14 +2387,8 @@ async function startGuidance(plan) {
   renderGuidance();
   drawPlan(plan);
 
-  if (navigator.geolocation) {
-    state.geoWatchId = navigator.geolocation.watchPosition(
-      processGuidancePosition,
-      err => console.warn('Guidance geolocation error', err),
-      // 속도 판정을 하려면 최신 측정이 필요하므로 캐시된 좌표를 쓰지 않는다.
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  }
+  // 위치 추적은 하나만 돌린다. handleWatchPosition 이 안내 중에는 승하차 판정까지 넘겨준다.
+  startLocationWatch();
   state.guidanceTimer = setInterval(refreshGuidanceAlerts, 10000);
 
   const notificationText = permission === 'granted'
@@ -2311,10 +2414,8 @@ function markGuidanceStage() {
 }
 
 function stopGuidance(showToast = true) {
-  if (state.geoWatchId != null && navigator.geolocation) {
-    navigator.geolocation.clearWatch(state.geoWatchId);
-    state.geoWatchId = null;
-  }
+  // 추적은 안내와 별개다. 따라가기를 켜 둔 사용자를 위해 안내만 끝내고 위치는 계속 본다.
+  if (!state.followUser) stopLocationWatch();
   if (state.guidanceTimer) {
     clearInterval(state.guidanceTimer);
     state.guidanceTimer = null;
@@ -2331,6 +2432,9 @@ document.getElementById('shareRideBtn')?.addEventListener('click', openCrowdCons
 document.getElementById('crowdingBtn')?.addEventListener('click', () => { if (state.activeGuidance?.stage === 'riding') document.getElementById('crowdingDialog')?.showModal(); });
 document.getElementById('guidanceStageBtn').addEventListener('click', markGuidanceStage);
 document.getElementById('stopGuidanceBtn').addEventListener('click', () => stopGuidance(true));
+// 사용자가 지도를 직접 움직이면 따라가기를 끈다(카카오맵과 같은 동작).
+map.on('dragstart', () => { if (state.followUser) setFollowUser(false); });
+
 document.getElementById('locateBtn').addEventListener('click', requestLocation);
 document.getElementById('mapLocateBtn').addEventListener('click', requestLocation);
 document.getElementById('routeBtn').addEventListener('click', planRoutes);

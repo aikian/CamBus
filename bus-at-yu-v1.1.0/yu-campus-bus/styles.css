@@ -99,15 +99,18 @@ body.route-open .page-switch, body.route-open .main-page-edge, body.route-open .
 .map-search {
   position:absolute; z-index:1000; top:16px; left:calc(16px + var(--switch-w) + 8px); width:380px;
   height:var(--switch-h);
-  display:flex; align-items:center; gap:8px; padding:0 8px 0 12px;
+  display:flex; align-items:center; gap:8px; padding:0 0 0 12px;
   border-radius:14px; background:rgba(255,255,255,.98); box-shadow:0 6px 22px rgba(0,0,0,.14);
   backdrop-filter:blur(12px);
+  /* 길찾기 버튼이 바 높이를 꽉 채우므로, 넘치는 모서리는 바의 둥근 모서리로 잘라낸다. */
+  overflow:hidden;
 }
 .map-search-icon { flex:0 0 auto; font-size:14px; opacity:.7; }
 .map-search input { flex:1; min-width:0; border:0; outline:0; background:transparent; font-size:14px; font-weight:600; }
 .map-search-clear { flex:0 0 auto; width:24px; height:24px; border:0; border-radius:50%; background:#eef0f2; color:#666; font-size:15px; line-height:1; }
 .map-search-clear[hidden] { display:none; }
-.map-search-route { flex:0 0 auto; border:0; border-radius:10px; background:#17191c; color:#fff; font-size:12px; font-weight:800; padding:9px 12px; }
+/* 바의 오른쪽 한 칸을 그대로 차지하게 해서 높이가 정확히 맞고 잘리지 않는다. */
+.map-search-route { flex:0 0 auto; align-self:stretch; border:0; border-radius:0; background:#17191c; color:#fff; font-size:12px; font-weight:800; padding:0 14px; }
 
 .map-controls { position:absolute; z-index:800; right:16px; bottom:84px; display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
 .zoom-group { display:flex; flex-direction:column; gap:1px; border-radius:10px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,.14); }
@@ -524,6 +527,20 @@ textarea:focus-visible,
 .stop-eta span { font-weight:800; color:#1f2328; }
 .stop-eta small { font-weight:500; color:#8a8f96; }
 
+/* 같은 정류장이라도 노선과 진행 방향에 따라 도착 시각이 다르므로 방면별로 나눠 보여준다. */
+/* 방면 이름이 잘리지 않도록 팝업이 이 폭까지는 벌어지게 한다. */
+.stop-dirs { margin-top:8px; min-width:212px; display:grid; gap:5px; }
+.stop-dir {
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px;
+  padding:7px 9px; border-radius:9px; background:#f4f6f8;
+}
+.stop-dir-badge { flex:0 0 auto; padding:2px 6px; border-radius:6px; color:#fff; font-size:9px; font-weight:900; }
+.stop-dir-toward { min-width:0; font-size:11px; font-weight:750; color:#3c4148; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stop-dir-wait { flex:0 0 auto; text-align:right; font-size:12px; font-weight:850; color:#1f2328; font-variant-numeric:tabular-nums; }
+.stop-dir-wait small { display:block; font-size:9px; font-weight:600; color:#8a8f96; }
+.stop-dir.soon .stop-dir-wait { color:#c4342f; }
+.stop-dirs-empty { padding:7px 9px; border-radius:9px; background:#f4f6f8; color:#767b83; font-size:11px; }
+
 /* --------------------------------------------------------------------------
    메인 지도 화면 마무리 (파일 뒤쪽 기본 규칙보다 뒤에 와야 이긴다)
    -------------------------------------------------------------------------- */
@@ -639,7 +656,7 @@ textarea:focus-visible,
   .swap-btn { width: 44px; height: 44px; }
   .depart-controls select,
   .depart-controls input[type="time"] { min-height: 44px; }
-  .map-search-route { min-height: 44px; }
+  .map-search-route { min-height:0; }
   .small-btn.icon-only { width: 44px; height: 44px; }
   .sheet-handle { padding: 14px 0 10px; }   /* 손잡이 잡기 쉽게 */
   .links-refresh { min-height: 44px; padding-inline: 14px; }
