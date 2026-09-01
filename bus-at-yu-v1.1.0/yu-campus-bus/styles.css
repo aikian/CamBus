@@ -99,7 +99,7 @@ body.route-open .page-switch, body.route-open .main-page-edge, body.route-open .
 .map-search {
   position:absolute; z-index:1000; top:16px; left:calc(16px + var(--switch-w) + 8px); width:380px;
   height:var(--switch-h);
-  display:flex; align-items:center; gap:8px; padding:0 0 0 12px;
+  display:flex; align-items:center; gap:8px; padding:0 6px 0 12px;
   border-radius:14px; background:rgba(255,255,255,.98); box-shadow:0 6px 22px rgba(0,0,0,.14);
   backdrop-filter:blur(12px);
   /* 길찾기 버튼이 바 높이를 꽉 채우므로, 넘치는 모서리는 바의 둥근 모서리로 잘라낸다. */
@@ -109,8 +109,13 @@ body.route-open .page-switch, body.route-open .main-page-edge, body.route-open .
 .map-search input { flex:1; min-width:0; border:0; outline:0; background:transparent; font-size:14px; font-weight:600; }
 .map-search-clear { flex:0 0 auto; width:24px; height:24px; border:0; border-radius:50%; background:#eef0f2; color:#666; font-size:15px; line-height:1; }
 .map-search-clear[hidden] { display:none; }
-/* 바의 오른쪽 한 칸을 그대로 차지하게 해서 높이가 정확히 맞고 잘리지 않는다. */
-.map-search-route { flex:0 0 auto; align-self:stretch; border:0; border-radius:0; background:#17191c; color:#fff; font-size:12px; font-weight:800; padding:0 14px; }
+/* 바 높이를 꽉 채우면 검은 덩어리가 알약 밖으로 튀어나온 것처럼 보인다.
+   위아래로 6px 씩 들여 넣어 바 안에 들어앉은 버튼으로 보이게 한다. */
+.map-search-route {
+  flex:0 0 auto; border:0; border-radius:10px; background:#17191c; color:#fff;
+  font-size:12px; font-weight:800; padding:0 13px;
+  height:calc(var(--switch-h) - 12px);
+}
 
 .map-controls { position:absolute; z-index:800; right:16px; bottom:84px; display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
 .zoom-group { display:flex; flex-direction:column; gap:1px; border-radius:10px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,.14); }
@@ -557,6 +562,8 @@ textarea:focus-visible,
 .page-switch { top:16px; left:16px; right:auto; }
 
 @media (max-width: 720px) {
+  /* 손가락으로 누르는 화면이라 바를 조금 키워 길찾기 버튼 높이(36px)를 확보한다. */
+  :root { --switch-h: 48px; }
   .page-switch { top:max(8px, env(safe-area-inset-top)); left:10px; right:auto; }
 }
 
