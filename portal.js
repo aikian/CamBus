@@ -35,8 +35,12 @@
   let currentItems = [];
   let sources = [];
   const filterButtons = [...document.querySelectorAll('[data-source]')];
+  const moreNews = document.getElementById('moreNews');
+  let extraItems = 0;
   function selectSource(value) {
     selected = value;
+    extraItems = 0;
+    document.getElementById('linksScroll').scrollTop = 0;
     filterButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.source === value)));
     renderFeed(currentItems);
     renderSourceNote();
@@ -284,22 +288,34 @@
     let contentCount = 0;
     let banners = 0;
     for (const item of list) {
-      if (banners >= bannerLimit) break;
+      if (banners >= bannerLimit + extraItems) break;
       feedList.appendChild(makeFeedCard(item));
       contentCount += 1;
       banners += 1;
-      if (banners >= bannerLimit) break;
-      if (feedEnabled && contentCount % contentsPerAd === 0) {
+      if (banners >= bannerLimit + extraItems) break;
+      if (feedEnabled && banners < bannerLimit && contentCount % contentsPerAd === 0) {
         adIndex += 1;
         feedList.appendChild(makeInlineAd(adIndex));
         banners += 1;
       }
     }
 
+    if (moreNews) {
+      moreNews.hidden = contentCount >= list.length;
+      moreNews.textContent = '소식 더 보기 · ' + Math.max(0, list.length - contentCount) + '건 남음';
+    }
+
     window.dispatchEvent(new CustomEvent('busyu:feed-rendered', {
       detail: { contentCount, adCount: adIndex, bannerCount: banners, available: list.length }
     }));
   }
+
+  moreNews?.addEventListener('click', () => {
+    const previous = feedList.querySelectorAll('.feed-card').length;
+    extraItems += adLayout().bannerLimit;
+    renderFeed(currentItems);
+    feedList.querySelectorAll('.feed-card')[previous]?.focus();
+  });
 
   async function readFeedJson(url) {
     const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });

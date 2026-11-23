@@ -23,7 +23,7 @@
 <body data-campus="yeungnam">
   <div id="app">
     <header class="app-mast">
-    <a class="app-wordmark" href="./?campus=select" aria-label="CamBus 캠퍼스 선택"><img src="icon.svg" width="28" height="28" alt="">CamBus <small>캠퍼스 변경</small></a>
+    <a class="app-wordmark" href="./?campus=select" aria-label="CamBus 캠퍼스 선택"><img src="icon.svg" width="28" height="28" alt="">CamBus <small>영남대 ▾</small></a>
     <nav class="page-switch" role="tablist" aria-label="페이지 전환">
       <button class="page-switch-btn active" type="button" role="tab" data-page-index="0" aria-controls="mainPage" aria-selected="true">버스 지도</button>
       <button class="page-switch-btn" type="button" role="tab" data-page-index="1" aria-controls="linksPage" aria-selected="false" tabindex="-1">학교 소식</button>
@@ -118,6 +118,7 @@
 
           <button class="map-headline" id="mainPageEdge" type="button" hidden><span class="headline-label">학교 공지</span><strong id="mapHeadline"></strong><span aria-hidden="true">›</span></button>
 
+          <button type="button" id="openStopBoard" class="stop-board-trigger" aria-haspopup="dialog" aria-controls="stopBoard">정류장별 도착 <span aria-hidden="true">↑</span></button>
           <div class="map-controls">
             <div class="zoom-group desktop-only">
               <button class="round-btn" id="zoomInBtn" aria-label="확대">＋</button>
@@ -175,8 +176,9 @@
             </nav>
             <p class="source-note" id="sourceNote" hidden></p>
             <section class="feed-list" id="feedList" aria-label="공지와 생활정보"></section>
+            <button type="button" class="more-news" id="moreNews" aria-controls="feedList" hidden>소식 더 보기</button>
             <div class="links-empty" id="linksEmpty" hidden>
-              <strong>등록된 피드가 없습니다.</strong>
+              <strong>표시할 소식이 없습니다.</strong>
               <span>새 소식이 올라오면 여기에 표시됩니다.</span>
             </div>
 
@@ -207,6 +209,17 @@
       </div>
     </section>
 
+    <dialog id="stopBoard" aria-labelledby="stopBoardTitle">
+      <div class="dialog-head">
+        <div><h2 id="stopBoardTitle">정류장별 도착</h2><p>시간표 기준 예상 도착 시간</p></div>
+        <form method="dialog"><button type="submit" class="icon-btn" aria-label="정류장 목록 닫기">×</button></form>
+      </div>
+      <div class="stop-board-routes" role="group" aria-label="셔틀 노선">
+        <button type="button" data-board-route="r1" aria-pressed="true">셔틀 1 · 인문계</button>
+        <button type="button" data-board-route="r2" aria-pressed="false">셔틀 2 · 자연계</button>
+      </div>
+      <div class="stop-board-list" id="stopBoardList"></div>
+    </dialog>
     <dialog id="crowdConsentDialog">
       <div class="dialog-head">
         <div><h2>탑승 위치 공유</h2><p>버스 위치 정확도 개선을 위해 탑승 중 현재 위치를 익명으로 잠시 공유할 수 있습니다.</p></div>
@@ -302,7 +315,7 @@
   <script src="portal.js"></script>
   <script src="route-utils.js"></script>
   <script src="subway-router.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=stop-board-1"></script>
   <script src="map-ui.js"></script>
   <script src="install.js"></script>
   <script>

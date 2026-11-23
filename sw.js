@@ -1,7 +1,7 @@
-const CACHE = 'cambus-v2.0.1-audience';
+const CACHE = 'cambus-v2.0.1-stop-board';
 const SHELL = [
   './', './index.html', './yeungnam.html', './styles.css',
-  './app.js', './portal.js', './ads.js', './map-ui.js', './install.js', './profile.js',
+  './app.js?v=stop-board-1', './portal.js', './ads.js', './map-ui.js', './install.js', './profile.js',
   './route-utils.js', './subway-router.js',
   // Leaflet 은 자체 호스팅한다. 캐시에 있어야 오프라인에서도 지도가 뜬다.
   './vendor/leaflet.js', './vendor/leaflet.css',
