@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#17191c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png" />
+  <!-- iOS는 manifest의 icons를 쓰지 않습니다. 이 태그가 없으면 홈 화면에 페이지 스크린샷이 들어갑니다. -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="CamBus" />
+  <title>CamBus · 영남대 순환버스</title>
+  <link rel="preconnect" href="https://tile.openstreetmap.org" />
+  <!-- Leaflet 은 자체 호스팅한다. CDN 이 막히면 앱 전체가 죽기 때문. -->
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <!-- EZOIC HEAD START: 승인 후 대시보드가 발급한 CMP/header 스크립트 원문만 여기에 설치합니다. ADS_PLAN.md 참고. -->
+  <!-- EZOIC HEAD END -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-campus="yeungnam">
+  <div id="app">
+    <header class="app-mast">
+    <a class="app-wordmark" href="./?campus=select" aria-label="CamBus 캠퍼스 선택"><img src="icon.svg" width="28" height="28" alt="">CamBus <small>캠퍼스 변경</small></a>
+    <nav class="page-switch" role="tablist" aria-label="페이지 전환">
+      <button class="page-switch-btn active" type="button" role="tab" data-page-index="0" aria-controls="mainPage" aria-selected="true">버스 지도</button>
+      <button class="page-switch-btn" type="button" role="tab" data-page-index="1" aria-controls="linksPage" aria-selected="false" tabindex="-1">학교 소식</button>
+    </nav>
+    </header>
+
+    <div class="page-viewport" id="pageViewport">
+      <div class="page-track" id="pageTrack">
+        <section class="app-page main-page" id="mainPage" aria-label="CamBus 메인">
+          <aside class="route-panel" id="sidePanel" aria-label="길찾기">
+            <button class="sheet-handle" id="sheetHandle" type="button" aria-label="길찾기 창 크기 조절 (끌어서 조절, 눌러서 전체화면)"><span></span></button>
+            <header class="panel-head">
+              <div class="brand-row">
+                <div>
+                  <div class="brand">길찾기</div>
+                  <div class="brand-sub">영남대 순환버스 · 교내 이동</div>
+                </div>
+              </div>
+              <button class="icon-btn" id="collapsePanel" aria-label="길찾기 닫기">×</button>
+            </header>
+            <span class="mobile-panel-hint" hidden aria-hidden="true">길찾기 열기</span>
+
+            <div class="panel-body">
+              <section class="search-card">
+                <div class="endpoints">
+                  <div class="field-row">
+                    <span class="dot dot-blue"></span>
+                    <div class="field-body">
+                      <label for="startInput">출발</label>
+                      <input id="startInput" list="destinationList" value="현재 위치" placeholder="현재 위치 또는 건물·정류장 검색" autocomplete="off" />
+                    </div>
+                    <div class="field-actions">
+                      <button class="small-btn icon-only" id="locateBtn" type="button" aria-label="현재 위치로 설정" title="현재 위치"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><path d="M12 1.8v3.2M12 19v3.2M1.8 12h3.2M19 12h3.2"></path></svg></button>
+                      <button class="small-btn icon-only" id="pickStartMapBtn" type="button" aria-pressed="false" aria-label="지도에서 출발지 선택" title="지도에서 선택"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.5s7-6.1 7-11.1a7 7 0 1 0-14 0c0 5 7 11.1 7 11.1z"></path><circle cx="12" cy="10.2" r="2.6"></circle></svg></button>
+                    </div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="field-row">
+                    <span class="dot dot-red"></span>
+                    <div class="field-body">
+                      <label for="destinationInput">도착</label>
+                      <input id="destinationInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" />
+                      <datalist id="destinationList"></datalist>
+                    </div>
+                    <div class="field-actions">
+                      <button class="small-btn icon-only" id="pickMapBtn" type="button" aria-pressed="false" aria-label="지도에서 도착지 선택" title="지도에서 선택"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.5s7-6.1 7-11.1a7 7 0 1 0-14 0c0 5 7 11.1 7 11.1z"></path><circle cx="12" cy="10.2" r="2.6"></circle></svg></button>
+                    </div>
+                  </div>
+                  <button class="swap-btn" id="swapEndpointsBtn" type="button" aria-label="출발지와 도착지 바꾸기" title="출발·도착 바꾸기">⇅</button>
+                </div>
+                <div class="divider"></div>
+                <div class="field-row depart-row">
+                  <span class="dot dot-time" aria-hidden="true">🕒</span>
+                  <div class="field-body">
+                    <label for="departureTimeInput">출발 시간</label>
+                    <div class="depart-controls">
+                      <select id="departureModeSelect" aria-label="출발 시간 방식">
+                        <option value="now">지금 출발</option>
+                        <option value="scheduled">시간 지정</option>
+                      </select>
+                      <input type="time" id="departureTimeInput" step="600" min="08:00" max="17:40" disabled aria-label="지정 출발 시간" />
+                    </div>
+                  </div>
+                </div>
+                <button class="primary-btn" id="routeBtn">가장 빠른 길 찾기</button>
+              </section>
+
+              <section class="results" id="results">
+                <div class="empty-state">
+                  <div class="empty-icon">↗</div>
+                  <strong>목적지를 선택하세요</strong>
+                  <p>현재 위치에서 도보와 도보+순환버스를 비교합니다.</p>
+                </div>
+              </section>
+
+              <details class="notice-card">
+                <summary class="notice-title">예상 위치 산정 방식</summary>
+                <p>실제 버스 GPS가 없을 때는 배차 시각, OSM 도로망 구간시간, 서문 5분 정차를 이용해 추정합니다.</p>
+                <p style="margin-top:6px;">탑승자가 명시적으로 위치 공유에 동의한 운행편은 익명 집계 위치를 우선 사용할 수 있습니다.</p>
+              </details>
+            </div>
+          </aside>
+
+          <main id="map" aria-label="영남대학교 캠퍼스 지도"></main>
+
+          <div class="map-search" id="mapSearch">
+            <span class="map-search-icon" aria-hidden="true">🔍</span>
+            <input id="mapSearchInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" aria-label="장소 검색" />
+            <button class="map-search-clear" id="mapSearchClear" type="button" hidden aria-label="검색어 지우기">×</button>
+            <button class="map-search-route" id="mobilePanelBtn" type="button">길찾기</button>
+          </div>
+
+          <button class="map-headline" id="mainPageEdge" type="button" hidden><span class="headline-label">학교 공지</span><strong id="mapHeadline"></strong><span aria-hidden="true">›</span></button>
+
+          <div class="map-controls">
+            <div class="zoom-group desktop-only">
+              <button class="round-btn" id="zoomInBtn" aria-label="확대">＋</button>
+              <button class="round-btn" id="zoomOutBtn" aria-label="축소">−</button>
+            </div>
+            <button class="round-btn locate" id="mapLocateBtn" aria-label="현재 위치" title="현재 위치">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="6.5"></circle>
+                <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle>
+                <path d="M12 1.8v3.2M12 19v3.2M1.8 12h3.2M19 12h3.2"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="sim-badge" id="simBadge" hidden></div>
+
+          <section class="guidance-bar" id="guidanceBar" hidden aria-live="polite">
+            <div class="guidance-main">
+              <div class="guidance-icon" id="guidanceIcon">BUS</div>
+              <div class="guidance-copy">
+                <strong id="guidanceTitle">승하차 알림</strong>
+                <span id="guidanceDetail">경로를 선택하면 안내를 시작합니다.</span>
+              </div>
+              <button class="guidance-close" id="stopGuidanceBtn" type="button" aria-label="안내 종료">×</button>
+            </div>
+            <div class="guidance-progress" aria-hidden="true"><i id="guidanceProgress"></i></div>
+            <div class="guidance-actions">
+              <button class="guidance-action primary" id="guidanceStageBtn" hidden>탑승했어요</button>
+              <button class="guidance-action ghost" id="shareRideBtn" hidden>위치 공유</button>
+              <button class="guidance-action ghost" id="crowdingBtn" hidden>혼잡도</button>
+            </div>
+          </section>
+
+          <div class="bottom-ad" id="bottomAd" aria-label="광고" hidden>
+            <span class="ad-label">광고</span>
+            <div class="bottom-ad-slot">메인 하단 배너 · 개발 모드</div>
+          </div>
+        </section>
+
+        <section class="app-page links-page" id="linksPage" aria-label="학교 소식과 생활정보">
+          <div class="links-scroll" id="linksScroll">
+            <header class="links-header">
+              <div>
+                <h1>학교 소식</h1>
+                <p id="feedStatus" role="status">학교 공지를 불러오는 중입니다.</p>
+              </div>
+              <button class="links-refresh" id="refreshLinksBtn" type="button">새로고침</button>
+            </header>
+
+            <nav class="source-filters" aria-label="소식 출처">
+              <button type="button" data-source="all" aria-pressed="true">전체</button>
+              <button type="button" data-source="news" aria-pressed="false">학교 공지</button>
+              <button type="button" data-source="career" aria-pressed="false">어울림</button>
+              <button type="button" data-source="program" aria-pressed="false">유토피아</button>
+            </nav>
+            <p class="source-note" id="sourceNote" hidden></p>
+            <section class="feed-list" id="feedList" aria-label="공지와 생활정보"></section>
+            <div class="links-empty" id="linksEmpty" hidden>
+              <strong>등록된 피드가 없습니다.</strong>
+              <span>새 소식이 올라오면 여기에 표시됩니다.</span>
+            </div>
+
+            <footer class="links-footer">
+              <p class="visitor-line" aria-label="사용자 통계">
+                오늘 <strong id="todayUsers">—</strong> · 이번달 <strong id="monthUsers">—</strong>
+              </p>
+              <p class="visitor-note" id="visitorNote">방문 브라우저 수</p>
+              <p class="contact-line" id="adContact" hidden>
+                배너 광고 문의 <span class="contact-email" id="contactEmail">contact@uxo.kr</span>
+                <button type="button" class="copy-btn" id="copyContactEmail" aria-label="이메일 주소 복사">복사</button>
+              </p>
+              <p class="contact-line">
+                <button type="button" class="copy-btn" id="profileSettings" hidden>이용자 정보 설정</button>
+                <a class="policy-link" href="./privacy.html">개인정보처리방침</a>
+              </p>
+            </footer>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="launch-ad" id="launchAd" hidden aria-label="광고">
+      <div class="launch-ad-head"><span>광고</span><button id="closeLaunchAd" class="ad-close" aria-label="광고 닫기">×</button></div>
+      <div id="launchAdSlot" class="launch-ad-slot">
+        <strong>대형 광고 영역</strong>
+        <span>첫 접속 세션 1회 · 개발 모드</span>
+      </div>
+    </section>
+
+    <dialog id="crowdConsentDialog">
+      <div class="dialog-head">
+        <div><h2>탑승 위치 공유</h2><p>버스 위치 정확도 개선을 위해 탑승 중 현재 위치를 익명으로 잠시 공유할 수 있습니다.</p></div>
+        <button class="icon-btn" id="closeCrowdConsent" type="button" aria-label="위치 공유 안내 닫기">×</button>
+      </div>
+      <div class="consent-body">
+        <ul><li>기본값은 공유 안 함입니다.</li><li>탑승 중에만 전송하며 샘플은 서버에서 약 2분 후 만료됩니다.</li><li>이름·학번·전화번호는 전송하지 않습니다.</li><li>운영 배포 시 HTTPS가 필요합니다.</li></ul>
+        <div class="dialog-actions"><button class="secondary-btn" id="declineCrowdShare">공유 안 함</button><button class="primary-inline-btn" id="acceptCrowdShare">익명 위치 공유</button></div>
+      </div>
+    </dialog>
+
+    <dialog id="crowdingDialog">
+      <div class="dialog-head">
+        <div><h2>현재 버스 혼잡도</h2><p>지금 타고 있는 차량 상태를 한 번만 선택해 주세요.</p></div>
+        <button class="icon-btn" id="closeCrowding" type="button" aria-label="혼잡도 창 닫기">×</button>
+      </div>
+      <div class="crowding-grid">
+        <button data-crowding="quiet"><strong>여유</strong><span>좌석 여유</span></button>
+        <button data-crowding="normal"><strong>보통</strong><span>일반적인 수준</span></button>
+        <button data-crowding="crowded"><strong>혼잡</strong><span>서서 갈 수 있음</span></button>
+        <button data-crowding="full"><strong>만석</strong><span>탑승이 어려울 수 있음</span></button>
+      </div>
+      <div class="dialog-note">앱 사용자 신고 기반 정보이며 실제 전체 승객 수를 의미하지 않습니다.</div>
+    </dialog>
+
+    <!-- 홈 화면 추가 유도. 안드로이드는 버튼 한 번으로 설치되고,
+         iOS Safari는 프로그램 설치가 불가능해 공유 시트 경로를 안내합니다. -->
+    <div class="install-bar" id="installBar" hidden>
+      <img class="install-icon" src="icon-192.png" alt="" width="40" height="40" />
+      <div class="install-copy">
+        <strong>홈 화면에 추가</strong>
+        <span id="installSub">앱처럼 바로 열 수 있어요</span>
+      </div>
+      <button class="install-go" id="installGo" type="button">추가</button>
+      <button class="install-close" id="installClose" type="button" aria-label="닫기">×</button>
+    </div>
+
+    <dialog id="iosInstallDialog" class="ios-install">
+      <div class="dialog-head">
+        <div><h2>홈 화면에 추가</h2><p>Safari에서 두 단계면 앱처럼 쓸 수 있어요.</p></div>
+        <button class="icon-btn" id="closeIosInstall" aria-label="닫기">×</button>
+      </div>
+      <ol class="ios-steps">
+        <li><span class="ios-step-num">1</span><span>아래 <b>공유</b> 버튼 <span class="ios-share-glyph" aria-hidden="true">⬆</span> 를 누르세요</span></li>
+        <li><span class="ios-step-num">2</span><span><b>홈 화면에 추가</b>를 선택하세요</span></li>
+      </ol>
+      <div class="dialog-note">Safari에서만 추가할 수 있습니다. Chrome 등 다른 앱으로 열었다면 Safari로 열어주세요.</div>
+    </dialog>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <dialog class="profile-dialog" id="profileDialog" aria-labelledby="profileTitle" aria-describedby="profileHelp">
+    <form method="dialog">
+      <h2 id="profileTitle" tabindex="-1" autofocus>이용자 정보 입력</h2>
+      <p id="profileHelp">세 항목을 한 번 입력하면 이 브라우저에 저장됩니다.</p>
+      <label for="profileAge">만 나이</label>
+      <div class="profile-age"><input id="profileAge" name="age" type="number" inputmode="numeric" min="0" max="130" step="1" required><span>세</span></div>
+      <label for="profileGender">성별</label>
+      <select id="profileGender" name="gender" required>
+        <option value="" disabled selected>선택해 주세요</option>
+        <option>여성</option><option>남성</option><option>기타</option><option>응답하지 않음</option>
+      </select>
+      <label for="profileOccupation">직업</label>
+      <select id="profileOccupation" name="occupation" required>
+        <option value="" disabled selected>선택해 주세요</option>
+        <option>학생</option><option>교수·강사</option><option>연구원</option><option>교직원</option>
+        <option>직장인</option><option>자영업·프리랜서</option><option>구직 중</option><option>기타</option>
+      </select>
+      <div id="audienceChoice" hidden>
+        <label><input type="checkbox" name="participate" aria-describedby="audienceHelp"> 이용자 통계에 참여 (선택)</label>
+        <p id="audienceHelp">서비스 개선을 위해 방문한 달마다 입력 당시의 연령대·성별·직업을 한 번 전송합니다. 항목별 합계는 이번 달을 포함해 12개월간 보관합니다. 참여하지 않아도 모든 기능을 이용할 수 있습니다.</p>
+      </div>
+      <p role="alert"></p>
+      <button type="submit">저장하고 계속하기</button>
+    </form>
+  </dialog>
+
+  <script src="profile.js"></script>
+  <script src="vendor/leaflet.js"></script>
+  <script>
+    window.YU_ADS_CONFIG = {
+      // 광고는 서버에서 방문자 기준 충족을 확인한 후 활성화한다.
+      provider: 'none',
+      launchPlacementId: null,
+      linksPlacementId: null,
+      feedPlacementIds: [],
+      useEzoicAnchor: true,
+      bannerHeight: 58
+    };
+  </script>
+  <script src="ads.js"></script>
+  <script src="portal.js"></script>
+  <script src="route-utils.js"></script>
+  <script src="subway-router.js"></script>
+  <script src="app.js"></script>
+  <script src="map-ui.js"></script>
+  <script src="install.js"></script>
+  <script>
+    // app.js 가 실패해도 서비스워커 등록과 오류 로깅은 살아 있어야 한다.
+    (function () {
+      var local = ['localhost', '127.0.0.1', '::1'].indexOf(location.hostname) >= 0;
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || local)) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function (err) {
+            console.warn('Service worker registration failed', err);
+          });
+        });
+      }
+      window.addEventListener('unhandledrejection', function (e) {
+        console.error('Unhandled promise rejection:', e.reason);
+      });
+      window.addEventListener('error', function (e) {
+        console.error('Uncaught error:', e.message, e.filename + ':' + e.lineno);
+      });
+    })();
+  </script>
+</body>
+</html>

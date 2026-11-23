@@ -5,7 +5,7 @@
  */
 (function () {
   const DEFAULTS = {
-    provider: 'demo', // demo | ezoic | none
+    provider: 'none', // demo | ezoic | none
     launchPlacementId: null,
     linksPlacementId: null,
     feedPlacementIds: [],
@@ -23,7 +23,7 @@
       const response = await fetch('/api/ad-config', { cache: 'no-store' });
       if (!response.ok) throw new Error(`ad config ${response.status}`);
       const remote = await response.json();
-      if (remote && typeof remote === 'object') Object.assign(cfg, remote);
+      if (remote?.audienceReached === true) Object.assign(cfg, remote);
     } catch (error) {
       console.info('CamBus ad config API unavailable; using bundled demo settings.', error);
     }
@@ -141,8 +141,97 @@
     });
   }
 
+  /** 관리자 화면에서 끈 위치는 아예 감춘다. */
+  function applySlotVisibility() {
+    const slots = cfg.layout?.slots || {};
+    const map = {
+      mainBottom: document.getElementById('bottomAd'),
+      launch: document.getElementById('launchAd'),
+      picksFooter: document.getElementById('linksAd')
+    };
+    for (const [name, el] of Object.entries(map)) {
+      if (el && slots[name] && slots[name].enabled === false) el.hidden = true;
+    }
+    if (slots.mainBottom && slots.mainBottom.enabled === false) setBannerHeight(0);
+  }
+
+  // ---- 노출/클릭 집계 ----
+  // 화면에 절반 이상이 1초 넘게 보였을 때만 노출 1회로 센다.
+  // 스크롤로 스쳐 지나간 것까지 세면 광고주에게 줄 숫자가 부풀려진다.
+  const VIEWABLE_RATIO = 0.5;
+  const VIEWABLE_MS = 1000;
+  const counted = new WeakSet();
+  const pending = new WeakMap();
+
+  function sendAdEvent(adId, slot, type) {
+    const body = JSON.stringify({ adId, slot, type });
+    try {
+      if (type === 'click' && navigator.sendBeacon) {
+        navigator.sendBeacon('/api/ad-event', new Blob([body], { type: 'application/json' }));
+        return;
+      }
+    } catch { /* 아래 fetch 로 넘어간다 */ }
+    fetch('/api/ad-event', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true
+    }).catch(() => {});
+  }
+
+  let observer = null;
+  function viewObserver() {
+    if (observer || typeof IntersectionObserver !== 'function') return observer;
+    observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        const el = entry.target;
+        if (entry.isIntersecting && entry.intersectionRatio >= VIEWABLE_RATIO) {
+          if (counted.has(el) || pending.has(el)) continue;
+          pending.set(el, setTimeout(() => {
+            pending.delete(el);
+            if (counted.has(el)) return;
+            counted.add(el);
+            observer.unobserve(el);
+            sendAdEvent(el.dataset.adId || 'unknown', el.dataset.adSlot || 'unknown', 'impression');
+          }, VIEWABLE_MS));
+        } else if (pending.has(el)) {
+          clearTimeout(pending.get(el));
+          pending.delete(el);
+        }
+      }
+    }, { threshold: [VIEWABLE_RATIO] });
+    return observer;
+  }
+
+  /** 광고를 담은 요소를 집계 대상으로 등록한다. */
+  function trackAd(el, adId, slot) {
+    if (!el) return;
+    el.dataset.adId = adId || 'unknown';
+    el.dataset.adSlot = slot || 'unknown';
+    viewObserver()?.observe(el);
+  }
+
+  document.addEventListener('click', event => {
+    const el = event.target.closest?.('[data-ad-id]');
+    if (!el) return;
+    // 광고 닫기 버튼이나 광고 영역의 여백 클릭까지 집계하면 클릭률이 부풀려진다.
+    // 광고주에게 보고하는 수치이므로, 실제 광고 링크를 눌렀을 때만 센다.
+    const target = event.target.closest?.('a, .ad-creative, [data-ad-click]');
+    if (!target || !el.contains(target)) return;
+    if (event.target.closest?.('.ad-close, [data-ad-dismiss]')) return;
+    sendAdEvent(el.dataset.adId, el.dataset.adSlot || 'unknown', 'click');
+  }, true);
+
+  function trackStaticSlots() {
+    const slots = cfg.layout?.slots || {};
+    if (slots.mainBottom?.enabled !== false) trackAd(document.getElementById('bottomAd'), 'slot:mainBottom', 'mainBottom');
+    if (slots.launch?.enabled !== false) trackAd(document.getElementById('launchAd'), 'slot:launch', 'launch');
+    if (slots.picksFooter?.enabled !== false) trackAd(document.getElementById('linksAd'), 'slot:picksFooter', 'picksFooter');
+  }
+
   function init() {
     setBannerHeight(cfg.provider === 'none' ? 0 : cfg.bannerHeight);
+    applySlotVisibility();
+    if (cfg.provider !== 'none') trackStaticSlots();
+    const contact = document.getElementById('adContact');
+    if (contact) contact.hidden = cfg.provider === 'none';
 
     const launch = document.getElementById('launchAd');
     const close = document.getElementById('closeLaunchAd');
@@ -158,8 +247,12 @@
       return;
     }
 
+    const showDisplaySlots = (cfg.provider === 'ezoic' && cfg.networkScriptsReady);
+    const bottom = document.getElementById('bottomAd');
+    if (bottom) bottom.hidden = !showDisplaySlots || cfg.layout?.slots?.mainBottom?.enabled === false;
+    if (bottom?.hidden) setBannerHeight(0);
     if (launch) {
-      if (launchSeen()) launch.hidden = true;
+      if (!showDisplaySlots || cfg.layout?.slots?.launch?.enabled === false || launchSeen()) launch.hidden = true;
       else {
         launch.hidden = false;
         markLaunchSeen();
@@ -202,6 +295,6 @@
     }
   }
 
-  window.YUAds = { config: cfg, init, dismissLaunchAd, attachFeedAds, loadRemoteConfig };
+  window.YUAds = { config: cfg, init, dismissLaunchAd, attachFeedAds, loadRemoteConfig, trackAd };
   bootstrap();
 })();
