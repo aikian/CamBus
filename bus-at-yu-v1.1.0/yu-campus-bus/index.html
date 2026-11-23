@@ -40,10 +40,11 @@
     .campus:hover .enter { background:#f2d026; }
     .enter span { margin-left:16px; }
     .map { position:relative; min-height:290px; background-color:#203c33; background-image:linear-gradient(#b3d9ab12 1px,transparent 1px),linear-gradient(90deg,#b3d9ab12 1px,transparent 1px); background-size:22px 22px; }
+    h1 { word-break:keep-all; text-wrap:balance; }
     canvas { width:100%; height:100%; position:absolute; inset:0; }
     @media(max-width:620px) {
       .wrap { width:calc(100% - 36px); } .brand { height:58px; font-size:23px; }
-      .campus { display:flex; flex-direction:column-reverse; } .info { padding:22px; }
+      .campus { display:flex; flex-direction:column-reverse; } main { padding-top:32px; } .info { padding:22px; }
       .map { min-height:clamp(150px,25vh,230px); } .enter { margin-top:20px; width:100%; display:flex; justify-content:space-between; }
     }
   </style>
@@ -53,11 +54,11 @@
   <main class="wrap">
     <p class="category">로컬대학문화</p>
     <h1>어느 캠퍼스로 갈까요?</h1>
-    <p class="intro">우리 학교의 버스 지도와 공지, 취업·비교과 소식을 한곳에서 확인하세요.</p>
+    <p class="intro">캠퍼스를 고르면 다음 방문부터 바로 열립니다.</p>
     <a class="campus" id="campusChoice" href="./yeungnam.html">
       <div class="info">
         <span class="region">경북 경산</span><h2>영남대학교</h2><p class="subtitle">경산캠퍼스</p>
-        <span class="enter">이 캠퍼스로 입장 <span aria-hidden="true">→</span></span>
+        <span class="enter">영남대 캠퍼스로 입장 <span aria-hidden="true">→</span></span>
       </div>
       <div class="map" aria-hidden="true"><canvas></canvas></div>
     </a>

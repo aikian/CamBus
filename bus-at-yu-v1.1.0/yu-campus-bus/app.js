@@ -129,7 +129,7 @@ const ROUTES = {
       stop('r1-2','사범대','B04',['사범대학','College of Education','중앙도서관','중도','중앙도서관 횡단보도'],[35.833928,128.757695],'사범대학 건너편',BOARDING_SECONDS,'사범대, 중앙도서관, 학생회관 학식, GS25, 정행대, 스타벅스'),
       stop('r1-3','음악관','A10',['음악대학','음악관','중앙테니스장','예술대학'],[35.83407,128.76073],'양방향 정차 가능 구간',BOARDING_SECONDS,'음대, 중앙테니스장, 동문 방향'),
       stop('r1-4','인문강당','B03',['인문관','인문관 강당','종강'],[35.832562,128.759154],'천마관 건너편',BOARDING_SECONDS,'인문관, 인문관강당, 종합강의동, 제2인문관'),
-      stop('r1-5','인문관','B03',['인문관 정문','대학본부'],[35.831079,128.758124],'대학본부·제1과학관 방향',BOARDING_SECONDS,'인문관, 대학본부, 제1과학관 방향 이동에 유리'),
+      stop('r1-5','인문관','B03',['인문관 정문','대학본부'],[35.831079,128.758124],'대학본부 방향',BOARDING_SECONDS,'인문관, 대학본부'),
       stop('r1-6','서문','서문',['서문','인조잔디축구장','기숙사'],[35.831288,128.750432],'5분 정차 · 순환지점',DWELL_SECONDS,'기숙사, 서문, 남매지, 축구장'),
       stop('r1-8','천마관','C03',['천마관','종합강의동','General Lecture Hall'],[35.8321,128.75939],'인문관 건너편',BOARDING_SECONDS,'천마관, 인문관 반대편 승하차 지점'),
       stop('r1-9','음악관','A10',['음악대학','음악관','중앙테니스장','예술대학'],[35.83407,128.76073],'복귀 방향 정차',BOARDING_SECONDS,'음대, 중앙테니스장, 동문 방향'),
@@ -146,14 +146,14 @@ const ROUTES = {
     guideNote: '현재 공식 정류장 체계를 유지하되, 정차 위치는 손그림 이미지와 설명을 참고해 보정했습니다.',
     stops: [
       stop('r2-1','노천강당','B01',['노천강당','Amphitheater','영남대역 3번출구'],[35.83418,128.754069],'천마로 방향 · 차량출입 통제구역 끝',0,'상경관, 우체국, 영남대역 3번출구'),
-      stop('r2-3','거울못','F22',['제2과학관','생활과학대학'],[35.830218,128.758805],'생활과학대학 건너편',BOARDING_SECONDS,'제2과학관, 제3과학관, 법전원, 러브로드, 생활과학대학'),
+      stop('r2-3','거울못','F22',['생활과학대학'],[35.830218,128.758805],'생활과학대학 건너편',BOARDING_SECONDS,'법전원, 러브로드, 생활과학대학'),
       stop('r2-4','이도','F27',['생명응용과학대학','생명응용과학대 본관','자연계학식','이종우과학도서관','약학관'],[35.828496,128.757566],'약학관 건너편',BOARDING_SECONDS,'생명응용과학대학, 자연계 학식, 이종우과학도서관, 약대'),
       stop('r2-5','기계관','E29',['기계관','Mechanical Engineering Building','자전거 보관소'],[35.826808,128.754777],'후문·삼풍동 방향',BOARDING_SECONDS,'기계관, 소재관, 자동차관, 로봇관, 후문 방향'),
       stop('r2-6','아트센터','E02',['천마아트센터','Chunma Art Center'],[35.83154,128.752942],'서문 직전 서측 정차',BOARDING_SECONDS,'천마아트센터, 서문 접근 정류장'),
       stop('r2-7','서문','서문',['서문','인조잔디축구장','기숙사'],[35.831379,128.750458],'5분 정차 · 순환지점',DWELL_SECONDS,'기숙사, 서문, 남매지, 축구장'),
       stop('r2-8','기계관','E29',['기계관','Mechanical Engineering Building','자전거 보관소'],[35.826643,128.754584],'자전거보관소 건너편',BOARDING_SECONDS,'기계관, 소재관, 자동차관, 로봇관, 후문 방향'),
       stop('r2-9','이도','G07',['약학관','이종우과학도서관','생명응용과학대학'],[35.828422,128.757765],'생명응용과학대학 본관 오르막길 건너편',BOARDING_SECONDS,'약학관, 생명응용과학대학 반대편'),
-      stop('r2-10','거울못','G01',['생활과학대학','생활과학대학 본관','제2과학관'],[35.830131,128.759025],'제2과학관 건너편',BOARDING_SECONDS,'생활과학대학, 제2과학관 반대편'),
+      stop('r2-10','거울못','G01',['생활과학대학','생활과학대학 본관'],[35.830131,128.759025],'거울못 건너편',BOARDING_SECONDS,'생활과학대학, 거울못'),
       stop('r2-11','중도','B04',['중앙도서관','상경관'],[35.832871,128.757137],'상경관·정행대 접근',BOARDING_SECONDS,'중앙도서관, 상경관, 정치행정대학, 스타벅스, 중도학식'),
       stop('r2-12','노천강당','B01',['노천강당','Amphitheater','영남대역 3번출구'],[35.834232,128.754251],'천마로 방향 · 차량출입 통제구역 끝',0,'기점 복귀 지점')
     ]
@@ -466,6 +466,57 @@ function renderStops() {
     });
   }
 }
+
+function setupStopBoard() {
+  const stopBoard = document.getElementById('stopBoard');
+  if (!stopBoard) return;
+  const boardList = document.getElementById('stopBoardList');
+  const boardRoutes = [...stopBoard.querySelectorAll('[data-board-route]')];
+  let boardRoute = 'r1';
+
+  function renderStopBoard() {
+    const route = ROUTES[boardRoute];
+    const rows = [];
+    for (const [index, stopInfo] of route.stops.entries()) {
+      if (!isFirstStopOfStation(route, index)) continue;
+      const directions = stopDirections(stopInfo.name).filter(d => d.routeId === route.id);
+      const first = directions.find(d => d.arrival);
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.dataset.index = index;
+      const name = document.createElement('strong');
+      name.textContent = stopInfo.name;
+      const wait = document.createElement('span');
+      wait.textContent = first ? Math.max(1, Math.ceil(first.arrival.wait / 60)) + '분' : noServiceNote();
+      row.append(name, wait);
+      rows.push(row);
+    }
+    boardList.replaceChildren(...rows);
+    boardRoutes.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.boardRoute === boardRoute)));
+  }
+
+  document.getElementById('openStopBoard').addEventListener('click', () => {
+    renderStopBoard();
+    stopBoard.showModal();
+  });
+  boardRoutes.forEach(button => button.addEventListener('click', () => {
+    boardRoute = button.dataset.boardRoute;
+    renderStopBoard();
+    boardList.scrollTop = 0;
+  }));
+  boardList.addEventListener('click', event => {
+    const button = event.target.closest('button[data-index]');
+    if (!button) return;
+    const index = Number(button.dataset.index);
+    const route = ROUTES[boardRoute];
+    const stopInfo = route.stops[index];
+    stopBoard.close();
+    const coord = liveStopCoord(route.id, index) || stopInfo.coord;
+    map.setView(coord, Math.max(map.getZoom(), 17), { animate:false });
+    L.popup().setLatLng(coord).setContent(stopPopupHtml(route, stopInfo, index)).openOn(map);
+  });
+}
+setupStopBoard();
 
 async function loadRouteTimingConfig() {
   try {
@@ -1247,23 +1298,26 @@ function populateDestinations() {
 }
 
 function findDestinationByName(name) {
-  const n = normalize(name);
+  const n = normalize(name).replace(/정류장$/, '');
   if (!n) return null;
   let best = null, score = 0;
   Object.values(ROUTES).forEach(r => r.stops.forEach(s => {
-    const names = [s.name, s.code, ...s.aliases, s.guide];
+    // Nearby landmarks can be searched by their listed name, separately from stop aliases.
+    const landmarks = s.guide.split(',').map(value => normalize(value.trim()));
+    if (score < 50 && landmarks.includes(n)) { best = s; score = 50; }
+    const names = [s.name, s.code, ...s.aliases];
     names.forEach(x => {
       const xn = normalize(x);
       let sc = 0;
       if (xn === n) sc = 100;
-      else if (xn.includes(n) || n.includes(xn)) sc = 60;
+      else if (xn && xn.includes(n)) sc = 60;
       if (sc > score) {
         score = sc;
         best = s;
       }
     });
   }));
-  return score >= 60 ? best : null;
+  return best;
 }
 
 function setStartLocation(coord, name = '지도에서 선택한 출발 위치', accuracy = null, recenter = true) {

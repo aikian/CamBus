@@ -149,7 +149,16 @@ async function main() {
   assert(mobile.provider === 'none' && !mobile.launchVisible && !mobile.bottomVisible, 'ads shown before audience threshold');
   assert(mobile.fabVisible || mobile.panelHint === '길찾기 열기', 'mobile route entry missing');
   assert(!mobile.closeVisible, 'hidden ad close button is visible');
+  assert(await evaluate(`['과학관','제1과학관','제2과학관','F21','과학관 정류장'].every(q => !findDestinationByName(q)) &&
+    !!findDestinationByName('서문') && !!findDestinationByName('이종우과학도서관')`), 'retired stop matched a boarding point');
   await screenshot('smoke-mobile-launch.png');
+  await evaluate("document.getElementById('openStopBoard').click()");
+  await waitFor("document.querySelector('#stopBoard[open]') && document.querySelector('#stopBoardList button')");
+  await evaluate("document.querySelector('[data-board-route=r2]').click()");
+  assert(await evaluate("!document.getElementById('stopBoardList').textContent.includes('과학관')"), 'retired stop on arrivals board');
+  await evaluate("document.querySelector('#stopBoardList button').click()");
+  await waitFor("!document.getElementById('stopBoard').open && document.querySelector('.popup-stop')");
+  await evaluate("void map.closePopup()");
 
   await evaluate("document.getElementById('closeLaunchAd').click()");
   await evaluate(`(() => {
