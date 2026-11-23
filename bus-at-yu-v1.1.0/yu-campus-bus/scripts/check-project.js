@@ -5,7 +5,7 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const scripts = [
-  'server.js', 'app.js', 'portal.js', 'ads.js', 'route-utils.js',
+  'server.js', 'audience.js', 'profile.js', 'app.js', 'portal.js', 'ads.js', 'route-utils.js',
   'stop-editor.js', 'path-editor.js', 'sw.js',
   'scripts/refresh-route-paths.js', 'scripts/refresh-yu-feed.js', 'scripts/check-feed-links.js'
 ];

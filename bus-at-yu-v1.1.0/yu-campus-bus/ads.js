@@ -5,7 +5,7 @@
  */
 (function () {
   const DEFAULTS = {
-    provider: 'demo', // demo | ezoic | none
+    provider: 'none', // demo | ezoic | none
     launchPlacementId: null,
     linksPlacementId: null,
     feedPlacementIds: [],
@@ -23,7 +23,7 @@
       const response = await fetch('/api/ad-config', { cache: 'no-store' });
       if (!response.ok) throw new Error(`ad config ${response.status}`);
       const remote = await response.json();
-      if (remote && typeof remote === 'object') Object.assign(cfg, remote);
+      if (remote?.audienceReached === true) Object.assign(cfg, remote);
     } catch (error) {
       console.info('CamBus ad config API unavailable; using bundled demo settings.', error);
     }
@@ -229,7 +229,9 @@
   function init() {
     setBannerHeight(cfg.provider === 'none' ? 0 : cfg.bannerHeight);
     applySlotVisibility();
-    trackStaticSlots();
+    if (cfg.provider !== 'none') trackStaticSlots();
+    const contact = document.getElementById('adContact');
+    if (contact) contact.hidden = cfg.provider === 'none';
 
     const launch = document.getElementById('launchAd');
     const close = document.getElementById('closeLaunchAd');
@@ -245,8 +247,12 @@
       return;
     }
 
+    const showDisplaySlots = (cfg.provider === 'ezoic' && cfg.networkScriptsReady);
+    const bottom = document.getElementById('bottomAd');
+    if (bottom) bottom.hidden = !showDisplaySlots || cfg.layout?.slots?.mainBottom?.enabled === false;
+    if (bottom?.hidden) setBannerHeight(0);
     if (launch) {
-      if (launchSeen()) launch.hidden = true;
+      if (!showDisplaySlots || cfg.layout?.slots?.launch?.enabled === false || launchSeen()) launch.hidden = true;
       else {
         launch.hidden = false;
         markLaunchSeen();

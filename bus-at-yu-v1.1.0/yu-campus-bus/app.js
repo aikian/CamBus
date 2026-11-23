@@ -131,7 +131,6 @@ const ROUTES = {
       stop('r1-4','인문강당','B03',['인문관','인문관 강당','종강'],[35.832562,128.759154],'천마관 건너편',BOARDING_SECONDS,'인문관, 인문관강당, 종합강의동, 제2인문관'),
       stop('r1-5','인문관','B03',['인문관 정문','대학본부'],[35.831079,128.758124],'대학본부·제1과학관 방향',BOARDING_SECONDS,'인문관, 대학본부, 제1과학관 방향 이동에 유리'),
       stop('r1-6','서문','서문',['서문','인조잔디축구장','기숙사'],[35.831288,128.750432],'5분 정차 · 순환지점',DWELL_SECONDS,'기숙사, 서문, 남매지, 축구장'),
-      stop('r1-7','과학관','F21',['제1과학관','정보전산원'],[35.831023,128.756579],'정보전산원 일방통행 오르막길 옆',BOARDING_SECONDS,'제1과학관, 생활과학대학, 거울못, 대학본부'),
       stop('r1-8','천마관','C03',['천마관','종합강의동','General Lecture Hall'],[35.8321,128.75939],'인문관 건너편',BOARDING_SECONDS,'천마관, 인문관 반대편 승하차 지점'),
       stop('r1-9','음악관','A10',['음악대학','음악관','중앙테니스장','예술대학'],[35.83407,128.76073],'복귀 방향 정차',BOARDING_SECONDS,'음대, 중앙테니스장, 동문 방향'),
       stop('r1-10','사범대','A08',['사범대학','College of Education','중앙도서관','중도'],[35.834141,128.757765],'중앙도서관 건너편 횡단보도',BOARDING_SECONDS,'사범대, 중앙도서관, 상경관, 정행대'),
@@ -147,7 +146,6 @@ const ROUTES = {
     guideNote: '현재 공식 정류장 체계를 유지하되, 정차 위치는 손그림 이미지와 설명을 참고해 보정했습니다.',
     stops: [
       stop('r2-1','노천강당','B01',['노천강당','Amphitheater','영남대역 3번출구'],[35.83418,128.754069],'천마로 방향 · 차량출입 통제구역 끝',0,'상경관, 우체국, 영남대역 3번출구'),
-      stop('r2-2','과학관','F21',['제1과학관','정보전산원'],[35.830992,128.756477],'정보전산원 일방통행 오르막길 옆',BOARDING_SECONDS,'제1과학관, 정보전산원'),
       stop('r2-3','거울못','F22',['제2과학관','생활과학대학'],[35.830218,128.758805],'생활과학대학 건너편',BOARDING_SECONDS,'제2과학관, 제3과학관, 법전원, 러브로드, 생활과학대학'),
       stop('r2-4','이도','F27',['생명응용과학대학','생명응용과학대 본관','자연계학식','이종우과학도서관','약학관'],[35.828496,128.757566],'약학관 건너편',BOARDING_SECONDS,'생명응용과학대학, 자연계 학식, 이종우과학도서관, 약대'),
       stop('r2-5','기계관','E29',['기계관','Mechanical Engineering Building','자전거 보관소'],[35.826808,128.754777],'후문·삼풍동 방향',BOARDING_SECONDS,'기계관, 소재관, 자동차관, 로봇관, 후문 방향'),
@@ -162,7 +160,7 @@ const ROUTES = {
   }
 };
 
-// Stops that share the school's own stop code across routes (서문, 제1과학관/F21, 중앙도서관/B04)
+// Stops that share the school's own stop code across routes (서문, 중앙도서관/B04)
 // are the same or an adjoining physical point, so they double as transfer stations.
 const TRANSFER_STATIONS = buildTransferStations(ROUTES);
 function transferStationForStop(routeId, stopInfo) {
@@ -404,7 +402,7 @@ function stopPopupHtml(route, stopInfo, index) {
     </div>`;
 }
 
-// 서문/1과학관처럼 좌표가 사실상 같은(도보 30m 이내) 환승역은 지하철 노선도처럼 마커 하나로
+// 서문처럼 좌표가 사실상 같은(도보 30m 이내) 환승역은 지하철 노선도처럼 마커 하나로
 // 합쳐서 보여줍니다. 정류장 좌표를 실제로 바꾸는 게 아니라 지도에 그리는 위치만 겹치는 것입니다.
 const STOP_MERGE_METERS = 30;
 
@@ -2293,7 +2291,8 @@ function remainingStopCount(g, coord) {
 function sendLegSample(routeId, type, index, seconds) {
   const value = Math.round(seconds);
   if (!Number.isFinite(value) || value < LEG_SAMPLE_MIN_SECONDS || value > LEG_SAMPLE_MAX_SECONDS) return;
-  const body = JSON.stringify({ routeId, type, index, seconds: value });
+  const body = JSON.stringify({ routeId, type, index, fromId: ROUTES[routeId].stops[index].id,
+    toId: type === 'travel' ? ROUTES[routeId].stops[index + 1].id : undefined, seconds: value });
   fetch('/api/leg-sample', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true
   }).catch(() => {});

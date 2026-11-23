@@ -1,4 +1,4 @@
-const CACHE = 'bus-at-yu-v5';
+const CACHE = 'bus-at-yu-v7';
 const SHELL = [
   './', './index.html', './styles.css', './portal.js', './app.js', './ads.js',
   './manifest.webmanifest', './icon.svg', './route-guide-r1.png', './route-guide-r2.png'

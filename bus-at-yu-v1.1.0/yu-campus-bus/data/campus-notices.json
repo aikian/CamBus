@@ -1,0 +1,38 @@
+[
+  {
+    "id": "yu-lms-otp",
+    "type": "notice",
+    "badge": "학교 공지",
+    "icon": "!",
+    "title": "LMS 교내 로그인, OTP 인증 시행",
+    "summary": "11월 23일 낮 12시부터 교내에서 강의포털 로그인 후 OTP 인증을 진행합니다. 등록 방법은 학교 공지 첨부 매뉴얼에 있습니다. 교외 접속은 추후 안내 예정입니다.",
+    "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232642543",
+    "source": "영남대학교 교무처 AI스마트교육센터",
+    "publishedAt": "2026-11-23",
+    "endsAt": "2026-11-30T23:59:59+09:00"
+  },
+  {
+    "id": "yu-external-access",
+    "type": "notice",
+    "badge": "학교 공지",
+    "icon": "!",
+    "title": "도서관·LMS 등 4개 서비스 교외 접속 제한 안내",
+    "summary": "11월 19일 학교는 도서관·URP·강의포털·YuTopia의 교외 접속을 일시 제한하고 교내망에서는 이용할 수 있다고 안내했습니다.",
+    "url": "https://www.yu.ac.kr/issheng/board/announcements.do?articleNo=232586031&mode=view",
+    "source": "영남대학교 개인정보보호책임자",
+    "publishedAt": "2026-11-19",
+    "endsAt": "2026-11-30T23:59:59+09:00"
+  },
+  {
+    "id": "yu-disclosure",
+    "type": "notice",
+    "badge": "학교 공지",
+    "icon": "!",
+    "title": "전자책·취업 홈페이지 개인정보 유출 안내",
+    "summary": "학교가 11월 16일 확인한 사고입니다. 서비스별 유출 항목과 학교 조치, 문의처를 원문에서 확인할 수 있습니다.",
+    "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232557685",
+    "source": "영남대학교 개인정보보호책임자",
+    "publishedAt": "2026-11-17",
+    "endsAt": "2026-11-30T23:59:59+09:00"
+  }
+]

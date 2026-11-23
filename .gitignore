@@ -8,6 +8,7 @@ bus-at-yu-v1.1.0/yu-campus-bus/artifacts/
 # 커밋하면 실행할 때마다 diff 가 생깁니다.
 bus-at-yu-v1.1.0/yu-campus-bus/data/visitor-stats.json
 bus-at-yu-v1.1.0/yu-campus-bus/data/metrics.json
+bus-at-yu-v1.1.0/yu-campus-bus/data/audience.json*
 
 # 의존성/OS 부산물
 node_modules/

@@ -1,7 +1,7 @@
 {
-  "name": "CamBus · 영남대 순환버스",
+  "name": "CamBus · 로컬대학문화",
   "short_name": "CamBus",
-  "description": "영남대학교 교내 순환버스 및 도보 길찾기",
+  "description": "캠퍼스별 순환버스 지도와 학교 공지, 취업·비교과 소식",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

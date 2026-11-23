@@ -2,14 +2,37 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main, master]
+  schedule:
+    - cron: '17,47 * * * *'
+
+concurrency:
+  group: cambus-pages
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare campus app and public news
+        working-directory: bus-at-yu-v1.1.0/yu-campus-bus
+        run: |
+          mkdir -p public/data
+          cp index.html yeungnam.html privacy.html styles.css manifest.webmanifest icon.svg icon-*.png apple-touch-icon.png public/
+          cp app.js ads.js portal.js install.js profile.js map-ui.js route-utils.js subway-router.js sw.js public/
+          cp -R vendor public/
+          cp data/route-*.json data/campus-notices.json data/feed-sources.json data/portal-{feed,auto}.json data/{subway-daegu,local-ads,pm-zones}.json public/data/
+          if git fetch --depth=1 origin gh-pages && git show FETCH_HEAD:data/portal-auto.json > previous.json; then
+            cp previous.json public/data/portal-auto.json
+          fi
+          CAMBUS_DATA_DIR="$PWD/public/data" node scripts/refresh-yu-feed.js || echo "::warning::School boards unavailable. Serving saved news."
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./yu-campus-bus
+          publish_dir: ./bus-at-yu-v1.1.0/yu-campus-bus/public

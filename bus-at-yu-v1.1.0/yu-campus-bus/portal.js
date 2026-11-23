@@ -3,9 +3,7 @@
  * - Page 0: CamBus map / routing
  * - Page 1: Picks vertical banner feed
  * - Picks 피드는 배너 20개(콘텐츠 16 + 광고 4)를 띄운다. 콘텐츠 4개마다 광고 1개.
- * - 콘텐츠 16칸 = 기획 배너(portal-feed.json 의 pinned) + 영대소식 조회수 상위 최대 12개.
- * - 기획 배너가 5개 이상이면 그만큼 영대소식이 조회수 낮은 쪽부터 밀려난다.
- * - Feed data: /api/portal-feed with ./data/portal-feed.json fallback.
+ * - 공개 학교 공지, 운영자가 고정한 카드, 최신 영대소식 순서로 보여준다.
  */
 (function () {
   const viewport = document.getElementById('pageViewport');
@@ -27,15 +25,30 @@
     return {
       contentsPerAd: Math.max(1, Number(layout.contentsPerAd) || DEFAULT_CONTENTS_PER_AD),
       bannerLimit: Math.max(1, Number(layout.feedBannerLimit) || DEFAULT_FEED_BANNER_LIMIT),
-      feedEnabled: layout.slots?.picksFeed?.enabled !== false
+      feedEnabled: window.YUAds?.config?.audienceReached === true && window.YUAds.config.provider !== 'none' && layout.slots?.picksFeed?.enabled !== false
     };
   }
+  const status = document.getElementById('feedStatus');
+  let loading = false;
+  let lastRender = '';
+  let selected = 'all';
+  let currentItems = [];
+  let sources = [];
+  const filterButtons = [...document.querySelectorAll('[data-source]')];
+  function selectSource(value) {
+    selected = value;
+    filterButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.source === value)));
+    renderFeed(currentItems);
+    renderSourceNote();
+  }
+  filterButtons.forEach(b => b.addEventListener('click', () => selectSource(b.dataset.source)));
   let currentPage = 0;
   let localAds = [];
   let touchStart = null;
   let swipeConsumed = false;
 
   function setPage(index, { focus = false } = {}) {
+    const previousPage = currentPage;
     currentPage = Math.max(0, Math.min(1, Number(index) || 0));
     if (track) track.style.transform = `translate3d(-${currentPage * 50}%,0,0)`;
     buttons.forEach((btn, i) => {
@@ -48,6 +61,10 @@
     window.dispatchEvent(new CustomEvent('busyu:page-change', { detail: { index: currentPage } }));
     try { history.replaceState(null, '', currentPage === 1 ? '#pick' : '#bus'); } catch {}
     if (currentPage === 0 && window.map?.invalidateSize) setTimeout(() => window.map.invalidateSize(), 260);
+    document.getElementById('mainPage').inert = currentPage !== 0;
+    document.getElementById('linksPage').inert = currentPage !== 1;
+    if (currentPage === 1 && previousPage !== 1) trackPortalEvent('news_open');
+    if (currentPage === 1) loadFeed();
     if (focus) buttons[currentPage]?.focus({ preventScroll: true });
   }
 
@@ -63,7 +80,11 @@
     if (event.key === 'End') return setPage(1, { focus: true });
     setPage(event.key === 'ArrowLeft' ? currentPage - 1 : currentPage + 1, { focus: true });
   });
-  edge?.addEventListener('click', () => setPage(1));
+  edge?.addEventListener('click', () => {
+    setPage(1, { focus: true });
+    selectSource('news');
+    document.getElementById('linksScroll').scrollTop = 0;
+  });
   window.addEventListener('hashchange', () => setPage(pageFromHash()));
   // 광고 배치 설정은 비동기로 온다. 먼저 그려졌다면 설정 도착 후 한 번 다시 그린다.
   window.addEventListener('cambus:ad-config-ready', () => { if (feedList?.children.length) loadFeed(); }, { once: true });
@@ -159,6 +180,7 @@
     const a = document.createElement('a');
     a.className = `feed-card feed-${String(item.type || 'utility').replace(/[^a-z0-9_-]/gi, '')}`;
     a.href = safeExternalUrl(item.url);
+    if (item.type === 'notice') a.classList.add('school-notice');
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.addEventListener('click', () => trackPortalEvent('feed_click', { itemId: String(item.id || '').slice(0,80) }));
@@ -193,14 +215,14 @@
 
     const source = document.createElement('span');
     source.className = 'feed-card-source';
-    source.textContent = item.source ? `${item.source} · 눌러서 보기` : '눌러서 보기';
+    source.textContent = item.source || '원문 보기';
 
     body.append(meta, title, summary, source);
 
     const arrow = document.createElement('span');
     arrow.className = 'feed-card-arrow';
     arrow.setAttribute('aria-hidden', 'true');
-    arrow.textContent = '›';
+    arrow.textContent = '↗';
 
     a.append(icon, body, arrow);
     return a;
@@ -253,7 +275,8 @@
   function renderFeed(items) {
     if (!feedList || !empty) return;
     feedList.replaceChildren();
-    const list = validItems(items);
+    const list = validItems(items).filter(item => selected === 'all' || item.type === selected ||
+      (selected === 'news' && item.type === 'notice'));
     empty.hidden = list.length > 0;
 
     const { contentsPerAd, bannerLimit, feedEnabled } = adLayout();
@@ -278,30 +301,88 @@
     }));
   }
 
+  async function readFeedJson(url) {
+    const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(`feed ${response.status}`);
+    return response.json();
+  }
+
+  async function bundledFeed() {
+    const [notices, manual, auto] = await Promise.all(
+      ['campus-notices', 'portal-feed', 'portal-auto'].map(name => readFeedJson(`./data/${name}.json`))
+    );
+    const list = validItems(manual);
+    const ordered = [...validItems(notices), ...list.filter(x => x.pinned),
+      ...validItems(auto.items || auto), ...list.filter(x => !x.pinned)];
+    const seen = new Set();
+    const items = ordered.filter(item => {
+      if (seen.has(item.url)) return false;
+      seen.add(item.url);
+      return true;
+    }).map((item, order) => ({ ...item, order }));
+    return { items, collectedAt: auto.collectedAt, sources: auto.sources || [] };
+  }
+
+  function formatKst(value) {
+    if (!value || !Number.isFinite(Date.parse(value))) return '';
+    return new Date(value).toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  function renderSourceNote() {
+    const sourceId = { career: 'yu-career', program: 'yu-yutopia', news: 'yu-news' }[selected];
+    const note = document.getElementById('sourceNote');
+    const info = sources.find(s => s.id === sourceId);
+    const lines = [];
+    if (info?.state === 'alternative') lines.push('어울림 게시판 연결 지연 · 진로취업지원팀이 영대소식에 게시한 공지를 표시합니다.');
+    if (info?.state === 'stale') lines.push('원본 게시판 갱신 지연');
+    if (info && info.state !== 'ok' && info.collectedAt) lines.push(`마지막 수집 ${formatKst(info.collectedAt)}`);
+    if (info?.state === 'stale' && info.checkedAt) lines.push(`확인 시도 ${formatKst(info.checkedAt)}`);
+    note.textContent = lines.join(' · ');
+    note.hidden = !lines.length;
+  }
+
+  let hasLiveFeed = false;
   async function loadFeed() {
+    if (loading) return;
+    loading = true;
     if (refresh) refresh.disabled = true;
     try {
-      await loadLocalAds();
-      let response = await fetch('/api/portal-feed', { cache: 'no-store' });
       let data;
-      if (response.ok) {
-        data = await response.json();
-        renderFeed(data.items || []);
-      } else {
-        response = await fetch('./data/portal-feed.json', { cache: 'no-store' });
-        if (!response.ok) throw new Error(`feed ${response.status}`);
-        data = await response.json();
-        renderFeed(Array.isArray(data) ? data : (data.items || []));
+      let snapshot = false;
+      try {
+        data = await readFeedJson('/api/portal-feed');
+        if (!Array.isArray(data.items)) throw new Error('invalid feed');
+        hasLiveFeed = true;
+      } catch (err) {
+        if (hasLiveFeed) throw err;
+        data = await bundledFeed();
+        snapshot = true;
       }
-    } catch (err) {
-      console.warn('Portal feed load failed', err);
-      renderFeed([]);
-      if (empty) {
-        empty.hidden = false;
-        empty.querySelector('strong').textContent = '생활 피드를 불러오지 못했습니다.';
-        empty.querySelector('span').textContent = '네트워크 또는 data/portal-feed.json을 확인하세요.';
+      if (adLayout().feedEnabled) await loadLocalAds();
+      const items = validItems(data.items);
+      currentItems = items;
+      sources = data.sources || [];
+      renderSourceNote();
+      const signature = JSON.stringify([items, localAds, adLayout()]);
+      if (signature !== lastRender) {
+        renderFeed(items);
+        const lead = items.find(item => item.type === 'notice') || items.find(item => item.type === 'news' && !item.pinned);
+        if (lead) {
+          document.getElementById('mapHeadline').textContent = lead.title;
+          edge.querySelector('.headline-label').textContent = lead.type === 'notice' ? '학교 공지' : '학교 소식';
+        }
+        edge.hidden = !lead;
+        lastRender = signature;
       }
+      const stamp = formatKst(data.collectedAt);
+      const stale = !stamp || Date.now() - Date.parse(data.collectedAt) > 15 * 60000;
+      status.textContent = [snapshot || stale ? '저장된 소식' : '5분마다 갱신', stamp].filter(Boolean).join(' · ');
+    } catch {
+      status.textContent = lastRender ? '연결 지연 · 이전에 불러온 소식을 표시합니다.' : '소식을 불러오지 못했습니다. 다시 시도해 주세요.';
     } finally {
+      loading = false;
       if (refresh) refresh.disabled = false;
     }
   }
@@ -323,7 +404,7 @@
   function renderStats(data) {
     if (todayUsers) todayUsers.textContent = Number.isFinite(Number(data?.today)) ? Number(data.today).toLocaleString('ko-KR') : '—';
     if (monthUsers) monthUsers.textContent = Number.isFinite(Number(data?.month)) ? Number(data.month).toLocaleString('ko-KR') : '—';
-    if (visitorNote) visitorNote.textContent = '익명 브라우저 기준 고유 사용자 수 · 기기/브라우저 변경 시 별도 집계';
+    if (visitorNote) visitorNote.textContent = '방문 브라우저 수 · 기기나 브라우저를 바꾸면 따로 집계됩니다';
   }
 
   // 광고 문의 메일 주소 복사. navigator.clipboard는 HTTPS/localhost에서만 동작하므로,
@@ -363,7 +444,9 @@
         body: JSON.stringify({ visitorToken: getVisitorToken() })
       });
       if (!response.ok) throw new Error(`visit ${response.status}`);
-      renderStats(await response.json());
+      const stats = await response.json();
+      renderStats(stats);
+      if (stats.audienceAvailable) window.dispatchEvent(new Event('cambus:audience-ready'));
     } catch (err) {
       console.warn('Visitor stats unavailable', err);
       if (visitorNote) visitorNote.textContent = '사용자 집계 서버 미연결';
@@ -380,6 +463,8 @@
 
   refresh?.addEventListener('click', () => Promise.all([loadFeed(), refreshStats()]));
 
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadFeed(); });
+  setInterval(() => { if (!document.hidden) loadFeed(); }, 60000);
   setPage(pageFromHash());
   setUpContactCopy();
   loadFeed();

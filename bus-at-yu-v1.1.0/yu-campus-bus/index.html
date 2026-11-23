@@ -1,291 +1,107 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#17191c" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="icon.svg" type="image/svg+xml" />
-  <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png" />
-  <!-- iOS는 manifest의 icons를 쓰지 않습니다. 이 태그가 없으면 홈 화면에 페이지 스크린샷이 들어갑니다. -->
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <meta name="apple-mobile-web-app-title" content="CamBus" />
-  <title>CamBus · 영남대 순환버스</title>
-  <link rel="preconnect" href="https://tile.openstreetmap.org" />
-  <!-- Leaflet 은 자체 호스팅한다. CDN 이 막히면 앱 전체가 죽기 때문. -->
-  <link rel="stylesheet" href="vendor/leaflet.css" />
-  <!-- EZOIC HEAD START: 승인 후 대시보드가 발급한 CMP/header 스크립트 원문만 여기에 설치합니다. ADS_PLAN.md 참고. -->
-  <!-- EZOIC HEAD END -->
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f7f0">
+  <title>캠퍼스 선택 · CamBus</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <script src="profile.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const choosing = params.get('campus') === 'select';
+    params.delete('campus');
+    const destination = './yeungnam.html' + (params.size ? '?' + params : '') + location.hash;
+    try {
+      if (choosing) history.replaceState(null, '', location.pathname + (params.size ? '?' + params : '') + location.hash);
+      if (!choosing && localStorage.getItem('cambus.campus') === 'yeungnam') location.replace(destination);
+    } catch {}
+  </script>
+  <style>
+    :root { color-scheme:light; --ink:#1b2522; --paper:#f7f7f0; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100svh; background:var(--paper); color:var(--ink); font-family:Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+    .wrap { width:min(100% - 40px,1040px); margin:auto; }
+    header { border-bottom:1px solid #cdd2c8; }
+    .brand { height:72px; display:flex; align-items:center; gap:10px; font-size:26px; letter-spacing:-1.4px; font-weight:850; }
+    main { padding:clamp(38px,8vh,98px) 0 48px; }
+    .category { margin:0 0 14px; color:#405f47; font-size:15px; font-weight:750; }
+    h1 { margin:0; font-size:clamp(37px,6.5vw,70px); letter-spacing:-.075em; line-height:1.13; }
+    .intro { margin:14px 0 clamp(24px,4vh,42px); color:#4f5b51; font-size:clamp(15px,2vw,19px); line-height:1.65; word-break:keep-all; }
+    .campus { display:grid; grid-template-columns:1fr 1.13fr; color:inherit; text-decoration:none; border:1px solid #bcc6b9; background:#fff; border-radius:22px; overflow:hidden; box-shadow:0 5px 0 #e2e5da; }
+    .campus:focus-visible { outline:4px solid #135d4c; outline-offset:5px; }
+    .info { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; padding:clamp(26px,4vw,52px); }
+    .region { font-size:14px; color:#546256; }
+    h2 { margin:8px 0; font-size:clamp(29px,4vw,44px); letter-spacing:-.065em; }
+    .subtitle { margin:0; font-size:15px; color:#47534b; }
+    .enter { margin-top:28px; padding:13px 18px; border-radius:10px; background:#ffe245; font-weight:800; }
+    .campus:hover .enter { background:#f2d026; }
+    .enter span { margin-left:16px; }
+    .map { position:relative; min-height:290px; background-color:#203c33; background-image:linear-gradient(#b3d9ab12 1px,transparent 1px),linear-gradient(90deg,#b3d9ab12 1px,transparent 1px); background-size:22px 22px; }
+    canvas { width:100%; height:100%; position:absolute; inset:0; }
+    @media(max-width:620px) {
+      .wrap { width:calc(100% - 36px); } .brand { height:58px; font-size:23px; }
+      .campus { display:flex; flex-direction:column-reverse; } .info { padding:22px; }
+      .map { min-height:clamp(150px,25vh,230px); } .enter { margin-top:20px; width:100%; display:flex; justify-content:space-between; }
+    }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <nav class="page-switch" role="tablist" aria-label="페이지 전환">
-      <button class="page-switch-btn active" type="button" role="tab" data-page-index="0" aria-controls="mainPage" aria-selected="true">CamBus</button>
-      <button class="page-switch-btn" type="button" role="tab" data-page-index="1" aria-controls="linksPage" aria-selected="false" tabindex="-1">Picks</button>
-    </nav>
-
-    <div class="page-viewport" id="pageViewport">
-      <div class="page-track" id="pageTrack">
-        <section class="app-page main-page" id="mainPage" aria-label="CamBus 메인">
-          <aside class="route-panel" id="sidePanel" aria-label="길찾기">
-            <button class="sheet-handle" id="sheetHandle" type="button" aria-label="길찾기 창 크기 조절 (끌어서 조절, 눌러서 전체화면)"><span></span></button>
-            <header class="panel-head">
-              <div class="brand-row">
-                <div>
-                  <div class="brand">길찾기</div>
-                  <div class="brand-sub">영남대 순환버스 · 교내 이동</div>
-                </div>
-              </div>
-              <button class="icon-btn" id="collapsePanel" aria-label="길찾기 닫기">×</button>
-            </header>
-            <span class="mobile-panel-hint" hidden aria-hidden="true">길찾기 열기</span>
-
-            <div class="panel-body">
-              <section class="search-card">
-                <div class="endpoints">
-                  <div class="field-row">
-                    <span class="dot dot-blue"></span>
-                    <div class="field-body">
-                      <label for="startInput">출발</label>
-                      <input id="startInput" list="destinationList" value="현재 위치" placeholder="현재 위치 또는 건물·정류장 검색" autocomplete="off" />
-                    </div>
-                    <div class="field-actions">
-                      <button class="small-btn icon-only" id="locateBtn" type="button" aria-label="현재 위치로 설정" title="현재 위치"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><path d="M12 1.8v3.2M12 19v3.2M1.8 12h3.2M19 12h3.2"></path></svg></button>
-                      <button class="small-btn icon-only" id="pickStartMapBtn" type="button" aria-pressed="false" aria-label="지도에서 출발지 선택" title="지도에서 선택"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.5s7-6.1 7-11.1a7 7 0 1 0-14 0c0 5 7 11.1 7 11.1z"></path><circle cx="12" cy="10.2" r="2.6"></circle></svg></button>
-                    </div>
-                  </div>
-                  <div class="divider"></div>
-                  <div class="field-row">
-                    <span class="dot dot-red"></span>
-                    <div class="field-body">
-                      <label for="destinationInput">도착</label>
-                      <input id="destinationInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" />
-                      <datalist id="destinationList"></datalist>
-                    </div>
-                    <div class="field-actions">
-                      <button class="small-btn icon-only" id="pickMapBtn" type="button" aria-pressed="false" aria-label="지도에서 도착지 선택" title="지도에서 선택"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.5s7-6.1 7-11.1a7 7 0 1 0-14 0c0 5 7 11.1 7 11.1z"></path><circle cx="12" cy="10.2" r="2.6"></circle></svg></button>
-                    </div>
-                  </div>
-                  <button class="swap-btn" id="swapEndpointsBtn" type="button" aria-label="출발지와 도착지 바꾸기" title="출발·도착 바꾸기">⇅</button>
-                </div>
-                <div class="divider"></div>
-                <div class="field-row depart-row">
-                  <span class="dot dot-time" aria-hidden="true">🕒</span>
-                  <div class="field-body">
-                    <label for="departureTimeInput">출발 시간</label>
-                    <div class="depart-controls">
-                      <select id="departureModeSelect" aria-label="출발 시간 방식">
-                        <option value="now">지금 출발</option>
-                        <option value="scheduled">시간 지정</option>
-                      </select>
-                      <input type="time" id="departureTimeInput" step="600" min="08:00" max="17:40" disabled aria-label="지정 출발 시간" />
-                    </div>
-                  </div>
-                </div>
-                <button class="primary-btn" id="routeBtn">가장 빠른 길 찾기</button>
-              </section>
-
-              <section class="results" id="results">
-                <div class="empty-state">
-                  <div class="empty-icon">↗</div>
-                  <strong>목적지를 선택하세요</strong>
-                  <p>현재 위치에서 도보와 도보+순환버스를 비교합니다.</p>
-                </div>
-              </section>
-
-              <details class="notice-card">
-                <summary class="notice-title">예상 위치 산정 방식</summary>
-                <p>실제 버스 GPS가 없을 때는 배차 시각, OSM 도로망 구간시간, 서문 5분 정차를 이용해 추정합니다.</p>
-                <p style="margin-top:6px;">탑승자가 명시적으로 위치 공유에 동의한 운행편은 익명 집계 위치를 우선 사용할 수 있습니다.</p>
-              </details>
-            </div>
-          </aside>
-
-          <main id="map" aria-label="영남대학교 캠퍼스 지도"></main>
-
-          <div class="map-search" id="mapSearch">
-            <span class="map-search-icon" aria-hidden="true">🔍</span>
-            <input id="mapSearchInput" list="destinationList" placeholder="건물·정류장 검색" autocomplete="off" aria-label="장소 검색" />
-            <button class="map-search-clear" id="mapSearchClear" type="button" hidden aria-label="검색어 지우기">×</button>
-            <button class="map-search-route" id="mobilePanelBtn" type="button">길찾기</button>
-          </div>
-
-          <button class="main-page-edge" id="mainPageEdge" type="button" aria-label="Picks 페이지로 넘기기"><span>›</span></button>
-
-          <div class="map-controls">
-            <div class="zoom-group desktop-only">
-              <button class="round-btn" id="zoomInBtn" aria-label="확대">＋</button>
-              <button class="round-btn" id="zoomOutBtn" aria-label="축소">−</button>
-            </div>
-            <button class="round-btn locate" id="mapLocateBtn" aria-label="현재 위치" title="현재 위치">
-              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="6.5"></circle>
-                <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle>
-                <path d="M12 1.8v3.2M12 19v3.2M1.8 12h3.2M19 12h3.2"></path>
-              </svg>
-            </button>
-          </div>
-
-          <div class="sim-badge" id="simBadge" hidden></div>
-
-          <section class="guidance-bar" id="guidanceBar" hidden aria-live="polite">
-            <div class="guidance-main">
-              <div class="guidance-icon" id="guidanceIcon">BUS</div>
-              <div class="guidance-copy">
-                <strong id="guidanceTitle">승하차 알림</strong>
-                <span id="guidanceDetail">경로를 선택하면 안내를 시작합니다.</span>
-              </div>
-              <button class="guidance-close" id="stopGuidanceBtn" type="button" aria-label="안내 종료">×</button>
-            </div>
-            <div class="guidance-progress" aria-hidden="true"><i id="guidanceProgress"></i></div>
-            <div class="guidance-actions">
-              <button class="guidance-action primary" id="guidanceStageBtn" hidden>탑승했어요</button>
-              <button class="guidance-action ghost" id="shareRideBtn" hidden>위치 공유</button>
-              <button class="guidance-action ghost" id="crowdingBtn" hidden>혼잡도</button>
-            </div>
-          </section>
-
-          <div class="bottom-ad" id="bottomAd" aria-label="광고">
-            <span class="ad-label">광고</span>
-            <div class="bottom-ad-slot">메인 하단 배너 · 개발 모드</div>
-          </div>
-        </section>
-
-        <section class="app-page links-page" id="linksPage" aria-label="Picks 생활정보 피드">
-          <div class="links-scroll" id="linksScroll">
-            <header class="links-header">
-              <div>
-                <span class="links-kicker">CamBus · Picks</span>
-                <h1>생활 피드</h1>
-                <p>학교 소식, 학사 일정, 주변 맛집, 유용한 정보를 모았습니다.</p>
-              </div>
-              <button class="links-refresh" id="refreshLinksBtn" type="button">새로고침</button>
-            </header>
-
-            <section class="feed-list" id="feedList" aria-live="polite"></section>
-            <div class="links-empty" id="linksEmpty" hidden>
-              <strong>등록된 피드가 없습니다.</strong>
-              <span>data/portal-feed.json에 항목을 추가하면 여기에 표시됩니다.</span>
-            </div>
-
-            <footer class="links-footer">
-              <p class="visitor-line" aria-label="사용자 통계">
-                오늘 <strong id="todayUsers">—</strong> · 이번달 <strong id="monthUsers">—</strong>
-              </p>
-              <p class="visitor-note" id="visitorNote">익명 브라우저 기준 고유 사용자 수</p>
-              <p class="contact-line">
-                배너 광고 문의 <span class="contact-email" id="contactEmail">contact@uxo.kr</span>
-                <button type="button" class="copy-btn" id="copyContactEmail" aria-label="이메일 주소 복사">복사</button>
-              </p>
-              <p class="contact-line">
-                <a class="policy-link" href="./privacy.html">개인정보처리방침</a>
-              </p>
-            </footer>
-          </div>
-        </section>
+  <header><div class="wrap brand"><img src="icon.svg" width="32" height="32" alt="">CamBus</div></header>
+  <main class="wrap">
+    <p class="category">로컬대학문화</p>
+    <h1>어느 캠퍼스로 갈까요?</h1>
+    <p class="intro">우리 학교의 버스 지도와 공지, 취업·비교과 소식을 한곳에서 확인하세요.</p>
+    <a class="campus" id="campusChoice" href="./yeungnam.html">
+      <div class="info">
+        <span class="region">경북 경산</span><h2>영남대학교</h2><p class="subtitle">경산캠퍼스</p>
+        <span class="enter">이 캠퍼스로 입장 <span aria-hidden="true">→</span></span>
       </div>
-    </div>
-
-    <section class="launch-ad" id="launchAd" hidden aria-label="광고">
-      <div class="launch-ad-head"><span>광고</span><button id="closeLaunchAd" class="ad-close" aria-label="광고 닫기">×</button></div>
-      <div id="launchAdSlot" class="launch-ad-slot">
-        <strong>대형 광고 영역</strong>
-        <span>첫 접속 세션 1회 · 개발 모드</span>
-      </div>
-    </section>
-
-    <dialog id="crowdConsentDialog">
-      <div class="dialog-head">
-        <div><h2>탑승 위치 공유</h2><p>버스 위치 정확도 개선을 위해 탑승 중 현재 위치를 익명으로 잠시 공유할 수 있습니다.</p></div>
-        <button class="icon-btn" id="closeCrowdConsent" type="button" aria-label="위치 공유 안내 닫기">×</button>
-      </div>
-      <div class="consent-body">
-        <ul><li>기본값은 공유 안 함입니다.</li><li>탑승 중에만 전송하며 샘플은 서버에서 약 2분 후 만료됩니다.</li><li>이름·학번·전화번호는 전송하지 않습니다.</li><li>운영 배포 시 HTTPS가 필요합니다.</li></ul>
-        <div class="dialog-actions"><button class="secondary-btn" id="declineCrowdShare">공유 안 함</button><button class="primary-inline-btn" id="acceptCrowdShare">익명 위치 공유</button></div>
-      </div>
-    </dialog>
-
-    <dialog id="crowdingDialog">
-      <div class="dialog-head">
-        <div><h2>현재 버스 혼잡도</h2><p>지금 타고 있는 차량 상태를 한 번만 선택해 주세요.</p></div>
-        <button class="icon-btn" id="closeCrowding" type="button" aria-label="혼잡도 창 닫기">×</button>
-      </div>
-      <div class="crowding-grid">
-        <button data-crowding="quiet"><strong>여유</strong><span>좌석 여유</span></button>
-        <button data-crowding="normal"><strong>보통</strong><span>일반적인 수준</span></button>
-        <button data-crowding="crowded"><strong>혼잡</strong><span>서서 갈 수 있음</span></button>
-        <button data-crowding="full"><strong>만석</strong><span>탑승이 어려울 수 있음</span></button>
-      </div>
-      <div class="dialog-note">앱 사용자 신고 기반 정보이며 실제 전체 승객 수를 의미하지 않습니다.</div>
-    </dialog>
-
-    <!-- 홈 화면 추가 유도. 안드로이드는 버튼 한 번으로 설치되고,
-         iOS Safari는 프로그램 설치가 불가능해 공유 시트 경로를 안내합니다. -->
-    <div class="install-bar" id="installBar" hidden>
-      <img class="install-icon" src="icon-192.png" alt="" width="40" height="40" />
-      <div class="install-copy">
-        <strong>홈 화면에 추가</strong>
-        <span id="installSub">앱처럼 바로 열 수 있어요</span>
-      </div>
-      <button class="install-go" id="installGo" type="button">추가</button>
-      <button class="install-close" id="installClose" type="button" aria-label="닫기">×</button>
-    </div>
-
-    <dialog id="iosInstallDialog" class="ios-install">
-      <div class="dialog-head">
-        <div><h2>홈 화면에 추가</h2><p>Safari에서 두 단계면 앱처럼 쓸 수 있어요.</p></div>
-        <button class="icon-btn" id="closeIosInstall" aria-label="닫기">×</button>
-      </div>
-      <ol class="ios-steps">
-        <li><span class="ios-step-num">1</span><span>아래 <b>공유</b> 버튼 <span class="ios-share-glyph" aria-hidden="true">⬆</span> 를 누르세요</span></li>
-        <li><span class="ios-step-num">2</span><span><b>홈 화면에 추가</b>를 선택하세요</span></li>
-      </ol>
-      <div class="dialog-note">Safari에서만 추가할 수 있습니다. Chrome 등 다른 앱으로 열었다면 Safari로 열어주세요.</div>
-    </dialog>
-
-    <div class="toast" id="toast"></div>
-  </div>
-
-  <script src="vendor/leaflet.js"></script>
+      <div class="map" aria-hidden="true"><canvas></canvas></div>
+    </a>
+  </main>
   <script>
-    window.YU_ADS_CONFIG = {
-      // Node 서버의 /api/ad-config 공개 설정이 이 데모 기본값을 덮어씁니다.
-      provider: 'demo',
-      launchPlacementId: null,
-      linksPlacementId: null,
-      feedPlacementIds: [],
-      useEzoicAnchor: true,
-      bannerHeight: 58
-    };
-  </script>
-  <script src="ads.js"></script>
-  <script src="portal.js"></script>
-  <script src="route-utils.js"></script>
-  <script src="subway-router.js"></script>
-  <script src="app.js"></script>
-  <script src="map-ui.js"></script>
-  <script src="install.js"></script>
-  <script>
-    // app.js 가 실패해도 서비스워커 등록과 오류 로깅은 살아 있어야 한다.
-    (function () {
-      var local = ['localhost', '127.0.0.1', '::1'].indexOf(location.hostname) >= 0;
-      if ('serviceWorker' in navigator && (location.protocol === 'https:' || local)) {
-        window.addEventListener('load', function () {
-          navigator.serviceWorker.register('./sw.js').catch(function (err) {
-            console.warn('Service worker registration failed', err);
+    const choice = document.getElementById('campusChoice');
+    choice.href = destination;
+
+    async function drawCampusMap() {
+      const {routes} = await fetch('./data/route-paths.json').then(r => r.json());
+      const canvas = document.querySelector('canvas');
+      const ctx = canvas.getContext('2d');
+      const paths = [routes.r1, routes.r2];
+      const points = paths.flatMap(r => r.geometry);
+      const lats = points.map(p => p[0]), lngs = points.map(p => p[1]);
+      const west = Math.min(...lngs), north = Math.max(...lats);
+      const extentX = (Math.max(...lngs) - west) * Math.cos(north * Math.PI / 180);
+      const extentY = north - Math.min(...lats);
+      function draw() {
+        const {width, height} = canvas.getBoundingClientRect();
+        const pixelRatio = Math.min(devicePixelRatio || 1, 2);
+        canvas.width = Math.round(width * pixelRatio); canvas.height = Math.round(height * pixelRatio);
+        ctx.setTransform(pixelRatio,0,0,pixelRatio,0,0);
+        const scale = Math.min((width-56)/extentX, (height-45)/extentY);
+        const project = ([lat,lng]) => [(width-extentX*scale)/2 + (lng-west)*Math.cos(north*Math.PI/180)*scale,
+          (height-extentY*scale)/2 + (north-lat)*scale];
+        paths.forEach((route, i) => {
+          ctx.beginPath();
+          route.geometry.forEach((p, j) => { const [x,y]=project(p); if (j) ctx.lineTo(x,y); else ctx.moveTo(x,y); });
+          ctx.lineWidth=4; ctx.lineJoin='round'; ctx.strokeStyle=i ? '#9bd7cb' : '#ffdc58'; ctx.stroke();
+          route.stopCoords.forEach(p => {
+            ctx.beginPath(); ctx.arc(...project(p),3.5,0,Math.PI*2); ctx.fillStyle='#1e392f'; ctx.fill();
+            ctx.lineWidth=1.8; ctx.stroke();
           });
         });
+        ctx.fillStyle='#f4f6e8'; ctx.font='600 12px sans-serif';
+        [['서문',routes.r1,5],['박물관',routes.r1,0],['기계관',routes.r2,3]].forEach(([label,route,index]) => {
+          const [x,y] = project(route.stopCoords[index]);
+          ctx.fillText(label,x+6,y-5);
+        });
       }
-      window.addEventListener('unhandledrejection', function (e) {
-        console.error('Unhandled promise rejection:', e.reason);
-      });
-      window.addEventListener('error', function (e) {
-        console.error('Uncaught error:', e.message, e.filename + ':' + e.lineno);
-      });
-    })();
+      draw(); new ResizeObserver(draw).observe(canvas);
+    }
+    drawCampusMap().catch(() => {});
   </script>
 </body>
 </html>

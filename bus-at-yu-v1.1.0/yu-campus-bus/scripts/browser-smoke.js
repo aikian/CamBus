@@ -119,6 +119,11 @@ async function main() {
 
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await navigate(`${baseUrl}/?smoke=mobile-${Date.now()}`);
+  await waitFor("document.getElementById('campusChoice')");
+  const firstVisit = await evaluate("Number(localStorage.getItem('cambus.firstVisitAt'))");
+  assert(firstVisit > 0, 'first visit was not recorded at campus selection');
+  await navigate(await evaluate("document.getElementById('campusChoice').href"));
+  assert(await evaluate("!document.getElementById('profileDialog').open"), 'profile shown on first visit');
   await waitFor("document.querySelectorAll('.stop-pin').length >= 10 && window.YUAds");
   const mobile = await evaluate(`(() => {
     const visible = el => Boolean(el && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0);
@@ -141,10 +146,9 @@ async function main() {
   })()`);
   assert(mobile.title.includes('CamBus'), 'mobile title missing');
   assert(mobile.stops >= 10 && mobile.routePaths >= 2, 'mobile map routes/stops missing');
-  assert(mobile.provider === 'demo' && mobile.launchVisible && mobile.bottomVisible, 'visible demo ads missing');
-  assert(mobile.closeVisible, 'mobile launch ad close button missing');
+  assert(mobile.provider === 'none' && !mobile.launchVisible && !mobile.bottomVisible, 'ads shown before audience threshold');
   assert(mobile.fabVisible || mobile.panelHint === '길찾기 열기', 'mobile route entry missing');
-  assert(mobile.tabRect.bottom <= mobile.launchRect.y, 'mobile page tabs overlap launch ad');
+  assert(!mobile.closeVisible, 'hidden ad close button is visible');
   await screenshot('smoke-mobile-launch.png');
 
   await evaluate("document.getElementById('closeLaunchAd').click()");
@@ -163,8 +167,26 @@ async function main() {
   await evaluate("document.querySelector('[data-page-index=\"1\"]').click()");
   await waitFor("document.querySelectorAll('.feed-card').length >= 5");
   const picks = await evaluate(`({ cards:document.querySelectorAll('.feed-card').length, ads:document.querySelectorAll('.feed-inline-ad').length, page:document.body.dataset.page })`);
-  assert(picks.page === '1' && picks.cards >= 5 && picks.ads >= 1, 'Picks feed or ads missing');
+  assert(picks.page === '1' && picks.cards >= 5 && picks.ads === 0, 'Check Picks content and hidden ad slots');
   await screenshot('smoke-mobile-picks.png');
+
+  // Return through the normal home URL after the three-day grace period.
+  await evaluate("localStorage.setItem('cambus.firstVisitAt', String(Date.now() - 72 * 3600000))");
+  await navigate(baseUrl + '/');
+  await waitFor("document.getElementById('profileDialog')?.open");
+  assert(await evaluate("location.pathname.endsWith('/yeungnam.html')"), 'saved campus was not restored');
+  await evaluate(`(() => {
+    const form = document.querySelector('#profileDialog form');
+    form.requestSubmit();
+    if (!document.getElementById('profileDialog').open) throw Error('empty profile accepted');
+    form.elements.age.value = '23';
+    form.elements.gender.value = '응답하지 않음';
+    form.elements.occupation.value = '학생';
+    form.requestSubmit();
+  })()`);
+  await waitFor("!document.getElementById('profileDialog').open");
+  await navigate(baseUrl + '/');
+  await waitFor("document.getElementById('profileDialog') && !document.getElementById('profileDialog').open");
 
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await navigate(`${baseUrl}/path-editor.html?smoke=${Date.now()}`);

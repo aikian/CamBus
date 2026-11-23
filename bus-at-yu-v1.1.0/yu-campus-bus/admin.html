@@ -152,6 +152,15 @@
           <tbody id="eventBody"><tr><td colspan="3" class="empty">불러오는 중…</td></tr></tbody>
         </table>
       </section>
+      <section>
+        <h2>이용자 구성</h2>
+        <p class="desc">통계 참여를 선택한 만 14세 이상 브라우저를 월 1회 집계합니다.</p>
+        <label for="audienceMonth">조회할 달</label>
+        <select id="audienceMonth"></select>
+        <p id="audienceTotal"></p>
+        <table><thead><tr><th>구분</th><th>응답</th><th class="num">브라우저 수</th></tr></thead>
+          <tbody id="audienceRows"></tbody></table>
+      </section>
     </div>
 
     <!-- ============ 광고 ============ -->
@@ -207,7 +216,7 @@
     <div class="panel" id="panel-picks">
       <section>
         <h2>영대소식 자동 수집</h2>
-        <p class="desc">공개 게시판에서 조회수 상위 글을 가져옵니다. 기획 배너와 광고를 뺀 자리를 이걸로 채웁니다.</p>
+        <p class="desc">공개 게시판을 5분마다 확인해 최근 게시물을 가져옵니다.</p>
         <div id="sourceList"></div>
         <div class="toolbar">
           <button class="primary" id="saveSources">수집 설정 저장</button>
@@ -356,13 +365,14 @@
   // ---------------- 대시보드 ----------------
   const EVENT_LABELS = {
     route_search: '길찾기 실행', guidance_start: '승하차 안내 시작',
-    ride_boarded: '탑승 처리', feed_click: 'Picks 클릭'
+    ride_boarded: '탑승 처리', feed_click: '학교 소식 클릭', pm_open: '개인형 이동장치 열기',
+    news_open: '학교 소식 탭 열기', campus_open: '캠퍼스 화면 열기'
   };
   async function loadOverview() {
     const o = await api('/api/admin/overview');
     $('brandSub').textContent = `${o.day} · 광고 ${o.adProvider}`;
     $('dashStats').innerHTML = `
-      <div class="stat"><span>오늘 사용자</span><strong>${num(o.visitors.today)}</strong><small>익명 브라우저 기준</small></div>
+      <div class="stat"><span>오늘 사용자</span><strong>${num(o.visitors.today)}</strong><small>방문 브라우저 기준</small></div>
       <div class="stat"><span>이번 달 사용자</span><strong>${num(o.visitors.month)}</strong><small>${o.month}</small></div>
       <div class="stat"><span>오늘 광고 노출</span><strong>${num(o.ads.impressions)}</strong><small>클릭 ${num(o.ads.clicks)} · CTR ${o.ads.ctr}%</small></div>
       <div class="stat"><span>Picks 항목</span><strong>${num(o.feed.manual + o.feed.auto)}</strong><small>수동 ${o.feed.manual}(고정 ${o.feed.pinned}) · 자동 ${o.feed.auto}</small></div>`;
@@ -371,6 +381,22 @@
       ? [...keys].map(k => `<tr><td>${esc(EVENT_LABELS[k] || k)}</td>` +
           `<td class="num">${num(o.events.day[k])}</td><td class="num">${num(o.events.month[k])}</td></tr>`).join('')
       : '<tr><td colspan="3" class="empty">아직 기록된 이용이 없습니다.</td></tr>';
+    const months = o.audienceMonths || {};
+    const picker = $('audienceMonth');
+    const selected = picker.value || o.month;
+    const available = [...new Set([o.month, ...Object.keys(months)])].sort().reverse();
+    picker.replaceChildren(...available.map(month => new Option(month, month)));
+    picker.value = available.includes(selected) ? selected : o.month;
+    picker.onchange = () => {
+      const row = months[picker.value];
+      $('audienceTotal').textContent = '참여 브라우저 ' + num(row?.total || 0) + '개';
+      const groups = { ageBand: '연령대', gender: '성별', occupation: '직업' };
+      $('audienceRows').innerHTML = Object.entries(groups).flatMap(([field, label]) =>
+        Object.entries(row?.[field] || {}).sort(([a],[b]) => a.localeCompare(b, 'ko')).map(([value, count]) =>
+          `<tr><td>${label}</td><td>${esc(value)}</td><td class="num">${num(count)}</td></tr>`)
+      ).join('') || '<tr><td colspan="3" class="empty">이 달의 참여 응답이 없습니다.</td></tr>';
+    };
+    picker.onchange();
     $('routeStats').innerHTML = Object.entries(o.routes || {}).map(([id, count]) =>
       `<div class="stat"><span>${esc(id)} 정차 수</span><strong>${num(count)}</strong><small>회차 종점 포함</small></div>`).join('')
       || '<p class="empty">노선 데이터를 읽지 못했습니다.</p>';
@@ -528,7 +554,7 @@
         <div class="row three" style="margin-top:10px;">
           <div><label>수집 페이지 수</label><input type="number" data-f="pages" value="${Number(src.pages) || 2}" min="1" max="10" /></div>
           <div><label>페이지당 글 수</label><input type="number" data-f="pageSize" value="${Number(src.pageSize) || 10}" min="1" max="100" /></div>
-          <div><label>조회수 상위 몇 개</label><input type="number" data-f="limit" value="${Number(src.limit) || 12}" min="1" max="60" /></div>
+          <div><label>가져올 최신 글 수</label><input type="number" data-f="limit" value="${Number(src.limit) || 12}" min="1" max="60" /></div>
         </div>
         </div>
       </details>`).join('') || '<p class="empty">수집 소스가 없습니다.</p>';

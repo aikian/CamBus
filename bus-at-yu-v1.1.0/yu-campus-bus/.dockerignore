@@ -2,6 +2,7 @@
 # serveStatic 이 허용목록으로 막고 있지만, 애초에 이미지에 안 넣는 게 더 안전하다.
 node_modules
 artifacts
+data/audience.json*
 *.zip
 .git
 .gitignore

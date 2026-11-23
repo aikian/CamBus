@@ -41,7 +41,7 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   }
 
-  // Groups stops that share the school's own stop code (e.g. "서문", "F21", "B04") across
+  // Groups stops that share the school's own stop code (e.g. "서문", "B04") across
   // different routes into a transfer station. A code repeated within a single route (a loop
   // passing the same point twice) is not a transfer and is collapsed to its first occurrence.
   function buildTransferStations(routesMap) {

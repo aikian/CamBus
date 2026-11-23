@@ -144,7 +144,7 @@ table { width:100%; border-collapse:collapse; font-size:13px; } th,td { padding:
 /* --------------------------------------------------------------------------
    v2 monetization + crowd mobility layer
    -------------------------------------------------------------------------- */
-:root { --ad-banner-height: 58px; }
+:root { --ad-banner-height: 0px; }
 
 /* Reserve the bottom strip at all times so ads never cover primary controls. */
 .side-panel { bottom: calc(var(--ad-banner-height) + 16px); }
@@ -153,7 +153,7 @@ table { width:100%; border-collapse:collapse; font-size:13px; } th,td { padding:
 .guidance-bar { bottom: calc(var(--ad-banner-height) + 16px); }
 .toast { bottom: calc(var(--ad-banner-height) + 28px); }
 
-.bottom-ad[hidden], .launch-ad[hidden] { display: none !important; }
+.bottom-ad[hidden], .links-ad[hidden], .launch-ad[hidden] { display: none !important; }
 .bottom-ad {
   position: absolute;
   z-index: 1600;

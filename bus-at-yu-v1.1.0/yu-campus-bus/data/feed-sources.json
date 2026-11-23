@@ -24,5 +24,27 @@
     "enabled": false,
     "pages": 2,
     "pageSize": 10
+  },
+  {
+    "id": "yu-career",
+    "url": "https://join.yu.ac.kr/front_new/index.php?g_page=job&m_page=job02",
+    "type": "career",
+    "badge": "어울림",
+    "source": "영남대학교 어울림",
+    "enabled": true,
+    "pages": 1,
+    "pageSize": 10,
+    "limit": 12
+  },
+  {
+    "id": "yu-yutopia",
+    "url": "https://yutopia.yu.ac.kr/ko/program/all",
+    "type": "program",
+    "badge": "유토피아",
+    "source": "영남대학교 YuTopia",
+    "enabled": true,
+    "pages": 1,
+    "pageSize": 10,
+    "limit": 12
   }
 ]

@@ -5,7 +5,7 @@
  */
 (function () {
   const DEFAULTS = {
-    provider: 'demo', // demo | ezoic | none
+    provider: 'none', // demo | ezoic | none
     launchPlacementId: null,
     linksPlacementId: null,
     launchSessionKey: 'yu-move-launch-ad-v1',

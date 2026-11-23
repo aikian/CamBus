@@ -66,9 +66,20 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 // (이게 없으면 route-stops.json 이 없어서 지도가 아예 그려지지 않는다)
 if (DATA_DIR !== BUNDLED_DATA_DIR && fs.existsSync(BUNDLED_DATA_DIR)) {
   for (const name of fs.readdirSync(BUNDLED_DATA_DIR)) {
-    if (!name.endsWith('.json')) continue;
+    if (!name.endsWith('.json') || name === 'audience.json') continue;
     const target = path.join(DATA_DIR, name);
     if (!fs.existsSync(target)) fs.copyFileSync(path.join(BUNDLED_DATA_DIR, name), target);
+  }
+}
+
+require('./scripts/remove-science-stop').removeScienceStop(DATA_DIR);
+if (DATA_DIR !== BUNDLED_DATA_DIR) {
+  const configured = JSON.parse(fs.readFileSync(FEED_SOURCES_FILE, 'utf8'));
+  const defaults = JSON.parse(fs.readFileSync(path.join(BUNDLED_DATA_DIR, 'feed-sources.json'), 'utf8'));
+  const added = defaults.filter(s => ['yu-career', 'yu-yutopia'].includes(s.id) && !configured.some(c => c.id === s.id));
+  if (added.length) {
+    fs.writeFileSync(FEED_SOURCES_FILE + '.tmp', JSON.stringify([...configured, ...added], null, 2) + '\n');
+    fs.renameSync(FEED_SOURCES_FILE + '.tmp', FEED_SOURCES_FILE);
   }
 }
 
@@ -82,7 +93,25 @@ if (!fs.existsSync(VISITOR_STATS_FILE)) fs.writeFileSync(VISITOR_STATS_FILE, '{\
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 let visitorStats = loadVisitorStats();
+const AD_VISITOR_THRESHOLD = 1000;
+const adAudience = new Set();
+if (!visitorStats.adAudienceReached) {
+  for (const month of Object.values(visitorStats.months)) {
+    if (!Array.isArray(month)) continue;
+    month.forEach(hash => adAudience.add(hash));
+    if (adAudience.size >= AD_VISITOR_THRESHOLD) break;
+  }
+  if (adAudience.size >= AD_VISITOR_THRESHOLD) {
+    visitorStats.adAudienceReached = true;
+    adAudience.clear();
+    persistVisitorStats();
+  }
+}
 let metrics = loadMetrics();
+const audience = require('./audience').openAudience(path.join(DATA_DIR, 'audience.json'), () => koreaDateKeys().month);
+setInterval(() => {
+  try { audience.rotate(); } catch (error) { console.error('Audience retention:', error.message); }
+}, 60 * 60 * 1000).unref();
 
 const mime = {
   '.html': 'text/html; charset=utf-8',
@@ -264,10 +293,17 @@ function persistAdLayout(input) {
 }
 
 function publicAdConfig() {
+  if (!visitorStats.adAudienceReached) {
+    const layout = loadAdLayout();
+    for (const key of Object.keys(layout.slots)) layout.slots[key] = { enabled: false };
+    return { provider: 'none', bannerHeight: 0, feedPlacementIds: [], useEzoicAnchor: false,
+      networkScriptsReady: false, layout, audienceReached: false };
+  }
   const requestedProvider = String(process.env.CAMBUS_AD_PROVIDER || 'demo').toLowerCase();
   const provider = AD_PROVIDERS.has(requestedProvider) ? requestedProvider : 'demo';
   return {
     provider,
+    audienceReached: true,
     launchPlacementId: positiveInteger(process.env.CAMBUS_AD_LAUNCH_PLACEMENT_ID),
     linksPlacementId: positiveInteger(process.env.CAMBUS_AD_LINKS_PLACEMENT_ID),
     feedPlacementIds: positiveIntegerList(process.env.CAMBUS_AD_FEED_PLACEMENT_IDS),
@@ -606,20 +642,29 @@ function feedItemActive(item, now = new Date()) {
   return true;
 }
 
-function loadPortalFeed(now = new Date()) {
+function autoSnapshot() {
+  const saved = readJsonFile(PORTAL_AUTO_FILE, []);
+  return Array.isArray(saved) ? { items: saved, collectedAt: null } : saved;
+}
+
+function loadPortalFeed(snapshot, now = new Date()) {
   const manual = sanitizeFeedList(readJsonFile(PORTAL_FEED_FILE, []), 'manual');
-  const auto = sanitizeFeedList(readJsonFile(PORTAL_AUTO_FILE, []), 'auto');
+  const auto = sanitizeFeedList(snapshot, 'auto');
   const byUrl = new Map();
   // Manual entries win over automatically collected duplicates.
   for (const item of auto) byUrl.set(item.url, item);
   for (const item of manual) byUrl.set(item.url, item);
 
-  // Picks 노출 순서: 직접 고정한 항목 -> 영대소식 조회수 상위(auto) -> 나머지 수동 항목.
+  const notices = sanitizeFeedList(readJsonFile(path.join(BUNDLED_DATA_DIR, 'campus-notices.json'), []), 'notice');
+  for (const item of notices.filter(item => feedItemActive(item, now))) byUrl.set(item.url, item);
+
+  // 학교 안내, 운영자 고정 항목, 최신 학교 소식, 기타 생활정보 순서.
   // 즉 광고와 고정 항목을 뺀 자리는 자동 수집분이 채운다.
-  const tier = item => (item.pinned ? 0 : (item.origin === 'auto' ? 1 : 2));
+  const tier = item => item.type === 'notice' ? -1 : (item.pinned ? 0 : (item.origin === 'auto' ? 1 : 2));
   const ranked = [...byUrl.values()].filter(item => feedItemActive(item, now)).sort((a, b) => {
     const dateCmp = String(b.publishedAt || '').localeCompare(String(a.publishedAt || ''));
-    return (tier(a) - tier(b)) || (a.order - b.order) || dateCmp || a.title.localeCompare(b.title, 'ko');
+    return (tier(a) - tier(b)) || (a.type === 'notice' && b.type === 'notice' && dateCmp)
+      || (a.order - b.order) || dateCmp || a.title.localeCompare(b.title, 'ko');
   });
   // order 를 최종 순위로 덮어써서, order 로 다시 정렬하는 클라이언트도 같은 순서를 본다.
   return ranked.map((item, index) => ({ ...item, order: index }));
@@ -675,7 +720,7 @@ function persistMetrics() {
   fs.renameSync(temp, METRICS_FILE);
 }
 
-const METRIC_EVENTS = new Set(['route_search','guidance_start','ride_boarded','feed_click','pm_open']);
+const METRIC_EVENTS = new Set(['route_search','guidance_start','ride_boarded','feed_click','pm_open','news_open','campus_open']);
 function recordMetric(type, payload = {}) {
   if (!METRIC_EVENTS.has(type)) return false;
   const { day, month } = koreaDateKeys();
@@ -864,18 +909,19 @@ function adminOverview() {
     clicks += Number(entry.clicks) || 0;
   }
   const manual = readJsonFile(PORTAL_FEED_FILE, []);
-  const auto = readJsonFile(PORTAL_AUTO_FILE, []);
+  const auto = autoSnapshot();
   const stops = loadRouteStops();
   return {
     day, month,
     visitors,
+    audienceMonths: audience.summary(),
     events: { day: metrics.days?.[day]?.events || {}, month: metrics.months?.[month]?.events || {} },
     ads: { impressions, clicks, ctr: impressions ? Number((clicks / impressions * 100).toFixed(2)) : 0 },
     feed: {
       manual: Array.isArray(manual) ? manual.length : 0,
       pinned: Array.isArray(manual) ? manual.filter(x => x?.pinned).length : 0,
-      auto: Array.isArray(auto) ? auto.length : 0,
-      autoUpdatedAt: Array.isArray(auto) && auto.length ? (auto[0]?.publishedAt || null) : null
+      auto: auto.items.length,
+      autoUpdatedAt: auto.collectedAt
     },
     routes: Object.fromEntries(Object.entries(stops.routes || {}).map(([id, r]) => [id, (r.stops || []).length])),
     adProvider: publicAdConfig().provider,
@@ -910,11 +956,17 @@ function median(values) {
   return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 }
 
-function recordLegSample(routeId, type, index, seconds) {
+function recordLegSample({ routeId, type, index, seconds, fromId, toId }) {
   if (!ROUTES.has(routeId) || !LEG_SAMPLE_TYPES.has(type)) return false;
-  const idx = Number(index);
+  // Older clients sent indices in the original sequentially numbered route.
+  const oldIndex = Number(index);
+  const origin = fromId ?? `${routeId}-${oldIndex + 1}`;
+  const destination = fromId == null ? `${routeId}-${oldIndex + 2}` : toId;
+  const stops = loadRouteStops().routes[routeId].stops;
+  const idx = stops.findIndex(stop => stop.id === origin);
+  if (type === 'travel' && (!destination || stops[idx + 1]?.id !== destination)) return false;
   const value = Math.round(Number(seconds));
-  if (!Number.isInteger(idx) || idx < 0 || idx > 60) return false;
+  if (idx < 0) return false;
   if (!Number.isFinite(value) || value < LEG_SECONDS_MIN || value > LEG_SECONDS_MAX) return false;
 
   const stats = loadLegStats();
@@ -994,6 +1046,7 @@ function loadVisitorStats() {
     const parsed = JSON.parse(fs.readFileSync(VISITOR_STATS_FILE, 'utf8'));
     return {
       days: parsed && typeof parsed.days === 'object' && parsed.days ? parsed.days : {},
+      adAudienceReached: parsed?.adAudienceReached === true,
       months: parsed && typeof parsed.months === 'object' && parsed.months ? parsed.months : {}
     };
   } catch {
@@ -1036,6 +1089,14 @@ function registerVisitor(visitorToken) {
   if (!Array.isArray(visitorStats.days[day])) visitorStats.days[day] = [];
   if (!Array.isArray(visitorStats.months[month])) visitorStats.months[month] = [];
   let changed = false;
+  if (!visitorStats.adAudienceReached) {
+    adAudience.add(digest);
+    if (adAudience.size >= AD_VISITOR_THRESHOLD) {
+      visitorStats.adAudienceReached = true;
+      adAudience.clear();
+      changed = true;
+    }
+  }
   if (!visitorStats.days[day].includes(digest)) { visitorStats.days[day].push(digest); changed = true; }
   if (!visitorStats.months[month].includes(digest)) { visitorStats.months[month].push(digest); changed = true; }
   if (changed) persistVisitorStats();
@@ -1098,10 +1159,11 @@ async function api(req, res, pathname) {
     return json(res, 200, { crowding: crowdingAggregates() });
   }
   if (req.method === 'GET' && pathname === '/api/portal-feed') {
-    return json(res, 200, { items: loadPortalFeed() });
+    const snapshot = autoSnapshot();
+    return json(res, 200, { items: loadPortalFeed(snapshot), collectedAt: snapshot.collectedAt, sources: snapshot.sources || [] });
   }
   if (req.method === 'GET' && pathname === '/api/local-ads') {
-    return json(res, 200, { ads: activeLocalAds() });
+    return json(res, 200, { ads: visitorStats.adAudienceReached ? activeLocalAds() : [] });
   }
   if (req.method === 'GET' && pathname === '/api/pm-zones') {
     return json(res, 200, { zones: loadPmZones() });
@@ -1126,7 +1188,15 @@ async function api(req, res, pathname) {
   if (req.method === 'POST' && pathname === '/api/visit') {
     const body = await readJson(req);
     if (!validToken(body.visitorToken)) return json(res, 400, { error: 'invalid_visitor_token' });
-    return json(res, 200, registerVisitor(body.visitorToken));
+    const counts = registerVisitor(body.visitorToken);
+    recordMetric('campus_open');
+    return json(res, 200, { ...counts, audienceAvailable: true });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/audience') {
+    if (crossSiteRequest(req) || !jsonBodyRequest(req)) return json(res, 403, { ok: false });
+    const status = audience.record(await readJson(req, 1024));
+    return json(res, status, { ok: status === 200 });
   }
 
   if (req.method === 'POST' && pathname === '/api/event') {
@@ -1138,7 +1208,7 @@ async function api(req, res, pathname) {
 
   if (req.method === 'POST' && pathname === '/api/leg-sample') {
     const body = await readJson(req);
-    const saved = recordLegSample(body.routeId, body.type, body.index, body.seconds);
+    const saved = recordLegSample(body);
     return json(res, saved ? 202 : 400, saved ? { ok: true } : { error: 'invalid_leg_sample' });
   }
 
@@ -1156,6 +1226,7 @@ async function api(req, res, pathname) {
 
   if (req.method === 'POST' && pathname === '/api/ad-event') {
     const body = await readJson(req);
+    if (!visitorStats.adAudienceReached) return json(res, 200, { ok: false });
     if (!AD_EVENT_TYPES.has(body.type)) return json(res, 400, { error: 'invalid_ad_event' });
     recordAdEvent(body.adId, body.slot, body.type);
     return json(res, 202, { ok: true });
@@ -1204,8 +1275,8 @@ async function api(req, res, pathname) {
   if (req.method === 'POST' && pathname === '/api/admin/refresh-feed') {
     if (!requireAdmin(req, res)) return;
     const out = await runFeedRefresh();
-    const auto = readJsonFile(PORTAL_AUTO_FILE, []);
-    return json(res, out.ok ? 200 : 409, { ...out, collected: Array.isArray(auto) ? auto.length : 0 });
+    const auto = autoSnapshot();
+    return json(res, out.ok ? 200 : 409, { ...out, collected: auto.items.length });
   }
 
   if (req.method === 'GET' && pathname === '/api/admin/local-ads') {
@@ -1291,8 +1362,8 @@ async function api(req, res, pathname) {
 // 프로젝트 루트를 통째로 노출하면 server.js(인증 로직), Dockerfile, data/ 의 방문자
 // 통계까지 공개된다. 브라우저가 실제로 받아야 하는 것만 허용한다.
 const PUBLIC_FILES = new Set([
-  'index.html', 'styles.css', 'app.js', 'portal.js', 'ads.js', 'map-ui.js',
-  'install.js', 'route-utils.js', 'subway-router.js', 'sw.js',
+  'index.html', 'yeungnam.html', 'styles.css', 'app.js', 'portal.js', 'ads.js', 'map-ui.js',
+  'install.js', 'profile.js', 'route-utils.js', 'subway-router.js', 'sw.js',
   'manifest.webmanifest', 'privacy.html',
   // 관리자 콘솔. 로그인 폼 외에는 아무것도 보여주지 않고, 모든 관리 API 는
   // CAMBUS_ADMIN_TOKEN 없이는 401 이다. 운영에서 못 열면 존재 이유가 없어 공개한다.
@@ -1301,7 +1372,7 @@ const PUBLIC_FILES = new Set([
   'icon-192-maskable.png', 'icon-512-maskable.png', 'apple-touch-icon.png',
   'vendor/leaflet.js', 'vendor/leaflet.css',
   'data/route-stops.json', 'data/route-paths.json', 'data/route-timings.json',
-  'data/subway-daegu.json', 'data/portal-feed.json', 'data/portal-auto.json',
+  'data/campus-notices.json', 'data/subway-daegu.json', 'data/portal-feed.json', 'data/portal-auto.json',
   'data/local-ads.json', 'data/pm-zones.json'
 ]);
 // 로컬 편집 도구는 운영에 배포하지 않는다.
@@ -1379,6 +1450,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
+  const refreshSchoolNews = async () => {
+    const result = await runFeedRefresh();
+    if (!result.ok && result.error !== 'already_running') console.warn('School feed refresh:', result.log || result.error);
+  };
+  refreshSchoolNews();
+  setInterval(refreshSchoolNews, 5 * 60_000).unref();
   console.log(`CamBus running at http://localhost:${PORT}`);
   console.log(`Portal feed files: ${PORTAL_FEED_FILE}, ${PORTAL_AUTO_FILE}`);
   console.log('Crowd telemetry stays in memory; visitor counts are stored as token hashes only.');
