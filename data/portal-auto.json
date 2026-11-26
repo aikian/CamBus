@@ -1,29 +1,77 @@
 {
-  "collectedAt": "2026-11-25T18:50:52.537Z",
+  "collectedAt": "2026-11-26T02:12:29.554Z",
   "sources": [
     {
       "id": "yu-news",
       "label": "영대소식",
-      "checkedAt": "2026-11-25T18:50:52.537Z",
-      "collectedAt": "2026-11-25T18:50:52.537Z",
+      "checkedAt": "2026-11-26T02:12:29.554Z",
+      "collectedAt": "2026-11-26T02:12:29.554Z",
       "state": "ok"
     },
     {
       "id": "yu-career",
       "label": "어울림",
-      "checkedAt": "2026-11-25T18:50:52.537Z",
-      "collectedAt": "2026-11-25T18:50:52.537Z",
+      "checkedAt": "2026-11-26T02:12:29.554Z",
+      "collectedAt": "2026-11-26T02:12:29.554Z",
       "state": "alternative"
     },
     {
       "id": "yu-yutopia",
       "label": "유토피아",
-      "checkedAt": "2026-11-25T18:50:52.537Z",
+      "checkedAt": "2026-11-26T02:12:29.554Z",
       "collectedAt": null,
       "state": "stale"
     }
   ],
   "items": [
+    {
+      "id": "auto-yu-news-232685065",
+      "type": "news",
+      "badge": "영대소식",
+      "icon": "📢",
+      "title": "★ 2026학년도 동계 집중어학캠프 모집 안내 ★",
+      "summary": "",
+      "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232685065",
+      "source": "영남대학교",
+      "publishedAt": "2026-11-26",
+      "hits": 77,
+      "enabled": true,
+      "auto": true,
+      "sourceId": "yu-news",
+      "order": 5000
+    },
+    {
+      "id": "auto-yu-news-232685044",
+      "type": "news",
+      "badge": "영대소식",
+      "icon": "📢",
+      "title": "2026학년도 교육수요자 만족도 조사 실시 안내(일정: 2026.11.24.(화) ~ 12.07.(월))",
+      "summary": "",
+      "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232685044",
+      "source": "영남대학교",
+      "publishedAt": "2026-11-26",
+      "hits": 172,
+      "enabled": true,
+      "auto": true,
+      "sourceId": "yu-news",
+      "order": 5001
+    },
+    {
+      "id": "auto-yu-news-232685043",
+      "type": "news",
+      "badge": "영대소식",
+      "icon": "📢",
+      "title": "[대학혁신지원사업] 🎁천마 비상(飛上) 캠프(공감-성장) 참여학생 모집",
+      "summary": "",
+      "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232685043",
+      "source": "영남대학교",
+      "publishedAt": "2026-11-26",
+      "hits": 214,
+      "enabled": true,
+      "auto": true,
+      "sourceId": "yu-news",
+      "order": 5002
+    },
     {
       "id": "auto-yu-news-232670925",
       "type": "news",
@@ -34,11 +82,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670925",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 496,
+      "hits": 666,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5000
+      "order": 5003
     },
     {
       "id": "auto-yu-news-232670920",
@@ -50,11 +98,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670920",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 1274,
+      "hits": 1536,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5001
+      "order": 5004
     },
     {
       "id": "auto-yu-news-232670912",
@@ -66,11 +114,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670912",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 596,
+      "hits": 686,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5002
+      "order": 5005
     },
     {
       "id": "auto-yu-news-232670902",
@@ -82,11 +130,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670902",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 585,
+      "hits": 656,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5003
+      "order": 5006
     },
     {
       "id": "auto-yu-news-232670897",
@@ -98,11 +146,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670897",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 480,
+      "hits": 542,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5004
+      "order": 5007
     },
     {
       "id": "auto-yu-news-232670896",
@@ -114,11 +162,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670896",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 568,
+      "hits": 648,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5005
+      "order": 5008
     },
     {
       "id": "auto-yu-news-232670881",
@@ -130,11 +178,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670881",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 567,
+      "hits": 621,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5006
+      "order": 5009
     },
     {
       "id": "auto-yu-news-232670880",
@@ -146,11 +194,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670880",
       "source": "영남대학교",
       "publishedAt": "2026-11-25",
-      "hits": 592,
+      "hits": 639,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
-      "order": 5007
+      "order": 5010
     },
     {
       "id": "auto-yu-career-232670920",
@@ -162,11 +210,11 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232670920",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-25",
-      "hits": 1274,
+      "hits": 1536,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
-      "order": 5008
+      "order": 5011
     },
     {
       "id": "auto-yu-news-232656775",
@@ -178,55 +226,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232656775",
       "source": "영남대학교",
       "publishedAt": "2026-11-24",
-      "hits": 865,
-      "enabled": true,
-      "auto": true,
-      "sourceId": "yu-news",
-      "order": 5009
-    },
-    {
-      "id": "auto-yu-news-232656754",
-      "type": "news",
-      "badge": "영대소식",
-      "icon": "📢",
-      "title": "[MISC] Call for Participants: AI Life Academy for International Students (~Dec 3)",
-      "summary": "",
-      "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232656754",
-      "source": "영남대학교",
-      "publishedAt": "2026-11-24",
-      "hits": 927,
-      "enabled": true,
-      "auto": true,
-      "sourceId": "yu-news",
-      "order": 5010
-    },
-    {
-      "id": "auto-yu-news-232656753",
-      "type": "news",
-      "badge": "영대소식",
-      "icon": "📢",
-      "title": "[다문화통합지원센터] 외국인 유학생 「AI 생활 아카데미」 참가자 모집 (~12/3)",
-      "summary": "",
-      "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232656753",
-      "source": "영남대학교",
-      "publishedAt": "2026-11-24",
-      "hits": 803,
-      "enabled": true,
-      "auto": true,
-      "sourceId": "yu-news",
-      "order": 5011
-    },
-    {
-      "id": "auto-yu-news-232656750",
-      "type": "news",
-      "badge": "영대소식",
-      "icon": "📢",
-      "title": "📢 PSAT 취업 준비 아카데미 참여자 추가 모집",
-      "summary": "",
-      "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232656750",
-      "source": "영남대학교",
-      "publishedAt": "2026-11-24",
-      "hits": 784,
+      "hits": 911,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-news",
@@ -242,7 +242,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232656775",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-24",
-      "hits": 865,
+      "hits": 911,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -258,7 +258,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232656750",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-24",
-      "hits": 784,
+      "hits": 804,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -274,7 +274,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232586038",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-19",
-      "hits": 1968,
+      "hits": 1993,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -290,7 +290,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232571845",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-18",
-      "hits": 1211,
+      "hits": 1223,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -306,7 +306,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232571839",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-18",
-      "hits": 750,
+      "hits": 760,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -322,7 +322,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232571819",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-18",
-      "hits": 559,
+      "hits": 567,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -338,7 +338,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232557656",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-17",
-      "hits": 767,
+      "hits": 771,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -354,7 +354,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232557620",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-17",
-      "hits": 1086,
+      "hits": 1094,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
@@ -370,7 +370,7 @@
       "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=view&articleNo=232557601",
       "source": "영남대학교 진로취업지원팀 · 영대소식",
       "publishedAt": "2026-11-17",
-      "hits": 1584,
+      "hits": 1600,
       "enabled": true,
       "auto": true,
       "sourceId": "yu-career",
